@@ -1,55 +1,51 @@
-"""Read saved HTML from disk and write records to CSV. No browser, no network."""
+"""Read saved HTML and write records to CSV. No browser, no network.
+
+    python parse.py books
+"""
 
 import csv
+import sys
 from pathlib import Path
 
-from bs4 import BeautifulSoup
+import sites
 
-PAGES_DIR = Path("pages")
-OUTPUT_FILE = Path("quotes.csv")
-FIELDS = ["author", "text", "tags"]
-
-
-def parse_quotes(html):
-    """Turn one page of HTML into a list of records."""
-    soup = BeautifulSoup(html, "html.parser")
-    records = []
-    for quote in soup.select("div.quote"):
-        tags = [tag.get_text(strip=True) for tag in quote.select("a.tag")]
-        records.append(
-            {
-                "author": quote.select_one("small.author").get_text(strip=True),
-                "text": quote.select_one("span.text").get_text(strip=True),
-                "tags": ";".join(tags),
-            }
-        )
-    return records
+PAGES_ROOT = Path("pages")
+DATA_DIR = Path("data")
 
 
-def parse_all():
-    paths = sorted(PAGES_DIR.glob("*.html"))
+def parse_saved_pages(site):
+    page_dir = PAGES_ROOT / site["name"]
+    paths = sorted(page_dir.glob("*.html"))
     if not paths:
-        raise SystemExit(f"ERROR: no HTML files in {PAGES_DIR}/ — run fetch.py first")
+        raise SystemExit(f"ERROR: no HTML in {page_dir}/ — run fetch.py first")
 
     records = []
     for path in paths:
-        page_records = parse_quotes(path.read_text(encoding="utf-8"))
-        print(f"{path.name}: {len(page_records)} quotes")
-        records.extend(page_records)
+        records.extend(site["parse"](path.read_text(encoding="utf-8")))
+    print(f"{len(paths)} pages -> {len(records)} records")
     return records
 
 
-def save_csv(records, path):
+def save_csv(site, records):
+    DATA_DIR.mkdir(exist_ok=True)
+    path = DATA_DIR / f"{site['name']}.csv"
     with open(path, "w", newline="", encoding="utf-8") as handle:
-        writer = csv.DictWriter(handle, fieldnames=FIELDS)
+        writer = csv.DictWriter(handle, fieldnames=site["csv_fields"])
         writer.writeheader()
         writer.writerows(records)
+    return path
 
 
-records = parse_all()
+def main():
+    if len(sys.argv) != 2:
+        raise SystemExit("usage: python parse.py <books|quotes>")
+    site = sites.get_site(sys.argv[1])
+    records = parse_saved_pages(site)
+    if not records:
+        raise SystemExit("ERROR: parsed 0 records — the page structure probably changed")
+    path = save_csv(site, records)
+    print(f"saved {len(records)} records to {path}")
 
-if not records:
-    raise SystemExit("ERROR: parsed 0 records — the page structure probably changed")
 
-save_csv(records, OUTPUT_FILE)
-print(f"saved {len(records)} records to {OUTPUT_FILE}")
+if __name__ == "__main__":
+    main()

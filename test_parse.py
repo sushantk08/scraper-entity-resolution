@@ -1,37 +1,49 @@
-"""Tests for the parser. No browser, no network — just a frozen page from fixtures/."""
+"""Parser tests. No browser, no network — just frozen pages from fixtures/."""
 
 from pathlib import Path
 
-from parse import parse_quotes
+import pytest
 
-FIXTURE = Path("fixtures/sample_page.html")
+import sites
 
-
-def load_fixture():
-    return FIXTURE.read_text(encoding="utf-8")
-
-
-def test_finds_quotes():
-    records = parse_quotes(load_fixture())
-    assert len(records) == 10
+FIXTURES = {
+    "books": Path("fixtures/books_page.html"),
+    "quotes": Path("fixtures/quotes_page.html"),
+}
 
 
-def test_every_field_is_filled():
-    records = parse_quotes(load_fixture())
-    for record in records:
-        assert record["author"], f"empty author in {record}"
-        assert record["text"], f"empty text in {record}"
+def load(site_name):
+    return FIXTURES[site_name].read_text(encoding="utf-8")
 
 
-def test_parses_a_known_quote():
-    """A specific, real value from the fixture — proves we extract content,
-    not just non-empty strings."""
-    records = parse_quotes(load_fixture())
-    authors = [record["author"] for record in records]
-    assert "Albert Einstein" in authors
+@pytest.mark.parametrize("site_name", sorted(FIXTURES))
+def test_finds_records(site_name):
+    assert len(sites.get_site(site_name)["parse"](load(site_name))) > 0
 
 
-def test_empty_page_yields_nothing():
-    """The positive control's opposite: given no quotes, we must return
-    an empty list rather than inventing records or crashing."""
-    assert parse_quotes("<html><body></body></html>") == []
+@pytest.mark.parametrize("site_name", sorted(FIXTURES))
+def test_required_fields_are_filled(site_name):
+    site = sites.get_site(site_name)
+    for record in site["parse"](load(site_name)):
+        for field in site["required_fields"]:
+            assert record[field], f"empty '{field}' in {record}"
+
+
+@pytest.mark.parametrize("site_name", sorted(FIXTURES))
+def test_empty_page_yields_nothing(site_name):
+    assert sites.get_site(site_name)["parse"]("<html></html>") == []
+
+
+def test_books_fields_look_right():
+    records = sites.get_site("books")["parse"](load("books"))
+    assert len(records) == 20
+    first = records[0]
+    assert first["rating"] in {"One", "Two", "Three", "Four", "Five"}
+    assert first["detail_url"].startswith("https://books.toscrape.com/catalogue/")
+
+
+def test_books_titles_are_not_truncated():
+    """The link text ends in an ellipsis for long titles, so we read the
+    title attribute instead. This test is what stops that regressing."""
+    records = sites.get_site("books")["parse"](load("books"))
+    assert not any(record["title"].endswith("...") for record in records)

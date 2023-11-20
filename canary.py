@@ -1,47 +1,55 @@
-"""Check the live website still has the structure we expect.
+"""Check a live site still has the structure we expect.
 
-This is NOT a test of our code — it's a test of the website. It is meant to
-fail when the site changes its markup, which is exactly when we need to know.
-Run it on a schedule, not on every commit.
+    python canary.py books
+
+This tests the WEBSITE, not our code. It is meant to fail when the site changes.
 """
 
-from fetch import get_html, make_driver
-from parse import parse_quotes
+import sys
 
-URL = "https://quotes.toscrape.com/js/page/1/"
+import sites
+from fetch import browser_fetch, make_driver, plain_fetch
 
 
-def check():
-    driver = make_driver()
-    try:
-        html = get_html(driver, URL)
-    finally:
-        driver.quit()
+def check(site):
+    url = site["urls"][0]
+    if site["needs_browser"]:
+        driver = make_driver()
+        try:
+            html = browser_fetch(driver, url, site["record_selector"])
+        finally:
+            driver.quit()
+    else:
+        html = plain_fetch(url)
 
+    if not html:
+        return [f"no HTML returned from {url}"]
+
+    records = site["parse"](html)
     problems = []
-
-    if html is None:
-        # Can't check anything else, so report and stop here.
-        return ["page never rendered any div.quote — selector or site changed"]
-
-    records = parse_quotes(html)
-
     if not records:
-        problems.append("parsed 0 records from the live page")
-
-    for field in ["author", "text"]:
-        if any(not record[field] for record in records):
-            problems.append(f"some records have an empty '{field}'")
-
+        problems.append(f"parsed 0 records from {url}")
+    for field in site["required_fields"]:
+        empty = sum(1 for record in records if not record[field])
+        if empty:
+            problems.append(
+                f"{empty} of {len(records)} records have an empty '{field}'"
+            )
     return problems
 
 
-problems = check()
+def main():
+    if len(sys.argv) != 2:
+        raise SystemExit("usage: python canary.py <books|quotes>")
+    site = sites.get_site(sys.argv[1])
+    problems = check(site)
+    if problems:
+        print(f"CANARY FAILED for {site['name']}:")
+        for problem in problems:
+            print(f"  - {problem}")
+        raise SystemExit(1)
+    print(f"canary OK — {site['name']} structure unchanged")
 
-if problems:
-    print("CANARY FAILED — the site's structure has probably changed:")
-    for problem in problems:
-        print(f"  - {problem}")
-    raise SystemExit(1)
 
-print("canary OK — live site structure unchanged")
+if __name__ == "__main__":
+    main()
