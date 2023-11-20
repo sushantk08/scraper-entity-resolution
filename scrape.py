@@ -1,3 +1,5 @@
+import csv
+
 from bs4 import BeautifulSoup
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
@@ -6,28 +8,52 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
 
 URL = "https://quotes.toscrape.com/js/"
+OUTPUT_FILE = "quotes.csv"
+FIELDS = ["author", "text", "tags"]
 
-# Headless means the browser runs without opening a window.
-options = Options()
-options.add_argument("--headless=new")
 
-driver = webdriver.Chrome(options=options)
-driver.get(URL)
+def get_html(url):
+    """Open a real browser, let the page's JavaScript run, return the finished HTML."""
+    options = Options()
+    options.add_argument("--headless=new")
+    driver = webdriver.Chrome(options=options)
+    try:
+        driver.get(url)
+        WebDriverWait(driver, 10).until(
+            EC.presence_of_element_located((By.CSS_SELECTOR, "div.quote"))
+        )
+        return driver.page_source
+    finally:
+        # Runs even if something above fails, so we never leave a stray
+        # Chrome process running in the background.
+        driver.quit()
 
-# Wait until the JavaScript has actually put the quotes on the page.
-# Without this, we'd sometimes read an empty page and get zero results.
-WebDriverWait(driver, 10).until(
-    EC.presence_of_element_located((By.CSS_SELECTOR, "div.quote"))
-)
 
-html = driver.page_source
-driver.quit()
+def parse_quotes(html):
+    """Turn HTML into a list of records. No browser involved, no network."""
+    soup = BeautifulSoup(html, "html.parser")
+    records = []
+    for quote in soup.select("div.quote"):
+        tags = [tag.get_text(strip=True) for tag in quote.select("a.tag")]
+        records.append(
+            {
+                "author": quote.select_one("small.author").get_text(strip=True),
+                "text": quote.select_one("span.text").get_text(strip=True),
+                "tags": ";".join(tags),
+            }
+        )
+    return records
 
-# Selenium's job is done: it ran the JavaScript and handed us the finished HTML.
-# BeautifulSoup's job starts here: pull the pieces we want out of that HTML.
-soup = BeautifulSoup(html, "html.parser")
 
-for quote in soup.select("div.quote"):
-    text = quote.select_one("span.text").get_text(strip=True)
-    author = quote.select_one("small.author").get_text(strip=True)
-    print(f"{author} — {text}")
+def save_csv(records, path):
+    """Write records to CSV."""
+    with open(path, "w", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(handle, fieldnames=FIELDS)
+        writer.writeheader()
+        writer.writerows(records)
+
+
+html = get_html(URL)
+records = parse_quotes(html)
+save_csv(records, OUTPUT_FILE)
+print(f"saved {len(records)} records to {OUTPUT_FILE}")
