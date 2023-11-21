@@ -1,3 +1,5 @@
+[![tests](https://github.com/sushantk08/scraper-entity-resolution/actions/workflows/tests.yml/badge.svg)](https://github.com/sushantk08/scraper-entity-resolution/actions/workflows/tests.yml)
+
 # Resilient scraper → entity resolution pipeline
 
 Scrapes a book catalogue, types and validates the result, then matches records

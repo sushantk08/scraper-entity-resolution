@@ -1,0 +1,31 @@
+name: tests
+
+# Only the offline half of the pipeline runs here. That is possible because
+# fetching is separated from parsing: the parser tests read frozen HTML from
+# fixtures/ and the matching tests read committed CSVs from data/, so nothing
+# here touches the network and nothing launches a browser.
+#
+# canary.py is deliberately NOT in this workflow. It hits the live site and is
+# designed to fail the day the markup changes, which is useful information but
+# has nothing to do with whether this commit is good. It gets its own scheduled
+# workflow so a red badge here always means "the code broke".
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - run: pip install -r requirements.txt
+
+      - run: python -m pytest -q
