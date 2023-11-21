@@ -11,30 +11,54 @@ import sites
 from fetch import browser_fetch, make_driver, plain_fetch
 
 
+def fetch_one(site, url, selector):
+    if not site["needs_browser"]:
+        return plain_fetch(url)
+    driver = make_driver()
+    try:
+        return browser_fetch(driver, url, selector)
+    finally:
+        driver.quit()
+
+
+def check_fields(records, fields, where):
+    problems = []
+    for field in fields:
+        empty = sum(1 for record in records if not record[field])
+        if empty:
+            problems.append(
+                f"{where}: {empty} of {len(records)} records have an empty '{field}'"
+            )
+    return problems
+
+
 def check(site):
     url = site["urls"][0]
-    if site["needs_browser"]:
-        driver = make_driver()
-        try:
-            html = browser_fetch(driver, url, site["record_selector"])
-        finally:
-            driver.quit()
-    else:
-        html = plain_fetch(url)
-
+    html = fetch_one(site, url, site["record_selector"])
     if not html:
         return [f"no HTML returned from {url}"]
 
     records = site["parse"](html)
-    problems = []
     if not records:
-        problems.append(f"parsed 0 records from {url}")
-    for field in site["required_fields"]:
-        empty = sum(1 for record in records if not record[field])
-        if empty:
-            problems.append(
-                f"{empty} of {len(records)} records have an empty '{field}'"
-            )
+        return [f"parsed 0 records from {url}"]
+
+    problems = check_fields(records, site["required_fields"], "listing")
+
+    if site["detail_parse"]:
+        detail_url = records[0]["detail_url"]
+        if not detail_url:
+            problems.append("listing: first record has no detail_url")
+        else:
+            detail_html = fetch_one(site, detail_url, site["detail_selector"])
+            if not detail_html:
+                problems.append(f"no HTML returned from {detail_url}")
+            else:
+                problems += check_fields(
+                    [site["detail_parse"](detail_html)],
+                    site["detail_required_fields"],
+                    "detail",
+                )
+
     return problems
 
 

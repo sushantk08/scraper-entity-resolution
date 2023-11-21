@@ -1,6 +1,6 @@
 """One dictionary per website, describing how to fetch and read it."""
 
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlparse
 
 from bs4 import BeautifulSoup
 
@@ -8,6 +8,15 @@ from bs4 import BeautifulSoup
 def text_of(element):
     """Text of an element, or empty string if it wasn't found."""
     return element.get_text(strip=True) if element else ""
+
+
+def slug_for(url):
+    """A safe, unique filename stem for a detail-page URL.
+
+    .../catalogue/a-light-in-the-attic_1000/index.html  ->  a-light-in-the-attic_1000
+    """
+    path = urlparse(url).path.strip("/").removesuffix("/index.html")
+    return (path.split("/")[-1] or "index")[:120]
 
 
 def parse_books(html):
@@ -43,6 +52,40 @@ def parse_books(html):
     return records
 
 
+def parse_book_detail(html):
+    """Read the extra fields that only exist on a single book's own page."""
+    soup = BeautifulSoup(html, "html.parser")
+
+    # The product information table is a list of label/value rows.
+    info = {}
+    for row in soup.select("table.table-striped tr"):
+        label = text_of(row.select_one("th"))
+        if label:
+            info[label] = text_of(row.select_one("td"))
+
+    # The description is the paragraph *after* the heading, not inside it.
+    description = ""
+    heading = soup.select_one("#product_description")
+    if heading:
+        description = text_of(heading.find_next_sibling("p"))
+
+    # Breadcrumb is Home / Books / <category> / <title>, and only the first
+    # three are links — so the last link is the category.
+    crumbs = [text_of(anchor) for anchor in soup.select("ul.breadcrumb li a")]
+    category = crumbs[-1] if len(crumbs) >= 3 else ""
+
+    return {
+        "upc": info.get("UPC", ""),
+        "price_excl_tax": info.get("Price (excl. tax)", ""),
+        "price_incl_tax": info.get("Price (incl. tax)", ""),
+        "tax": info.get("Tax", ""),
+        "stock": info.get("Availability", ""),
+        "review_count": info.get("Number of reviews", ""),
+        "category": category,
+        "description": description,
+    }
+
+
 def parse_quotes(html):
     soup = BeautifulSoup(html, "html.parser")
     records = []
@@ -70,6 +113,20 @@ BOOKS = {
     "csv_fields": ["title", "price", "rating", "availability", "detail_url"],
     "required_fields": ["title", "price"],
     "parse": parse_books,
+    # Each record links to its own page with more fields on it.
+    "detail_selector": "div.product_main",
+    "detail_fields": [
+        "upc",
+        "price_excl_tax",
+        "price_incl_tax",
+        "tax",
+        "stock",
+        "review_count",
+        "category",
+        "description",
+    ],
+    "detail_required_fields": ["upc", "category"],
+    "detail_parse": parse_book_detail,
 }
 
 QUOTES = {
@@ -82,6 +139,8 @@ QUOTES = {
     "csv_fields": ["author", "text", "tags"],
     "required_fields": ["author", "text"],
     "parse": parse_quotes,
+    # No per-record pages on this site.
+    "detail_parse": None,
 }
 
 ALL_SITES = {"books": BOOKS, "quotes": QUOTES}
