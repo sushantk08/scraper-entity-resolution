@@ -24,9 +24,13 @@ DATA_DIR = Path("data")
 
 
 def load():
-    left = pd.read_csv(DATA_DIR / "books_clean.csv").rename(columns={"upc": "left_id"})
+    left = pd.read_csv(DATA_DIR / "books_left.csv").rename(columns={"upc": "left_id"})
     right = pd.read_csv(DATA_DIR / "books_right.csv")
     truth = pd.read_csv(DATA_DIR / "truth.csv")
+    # A missing category must read back as "", not NaN: bool(NaN) is True, which
+    # would make "unknown" look like a real value to the same_category feature.
+    for frame in (left, right):
+        frame["category"] = frame["category"].fillna("")
     left["key"] = clean.normalise_title(left["title"])
     right["key"] = clean.normalise_title(right["title"])
     return left, right, truth
@@ -38,8 +42,8 @@ def exact_key_pairs(left, right):
     return set(zip(merged["left_id"], merged["right_id"]))
 
 
-def nearest_neighbour_pairs(left, right, k):
-    """Character n-gram TF-IDF, then the k closest left records per right record.
+def nearest_neighbours(left, right, k):
+    """The k closest left records for each right record, with similarities.
 
     Character n-grams rather than words, because the noise we care about is
     typos and reordering — both of which break word-level matching.
@@ -52,15 +56,19 @@ def nearest_neighbour_pairs(left, right, k):
         n_neighbors=min(k, len(left)), metric="cosine", algorithm="brute"
     )
     index.fit(left_matrix)
-    _, neighbours = index.kneighbors(right_matrix)
+    distances, neighbours = index.kneighbors(right_matrix)
 
     left_ids = left["left_id"].to_numpy()
     right_ids = right["right_id"].to_numpy()
-    return {
-        (left_ids[column], right_ids[row])
+    return [
+        (left_ids[neighbours[row][slot]], right_ids[row], 1.0 - distances[row][slot])
         for row in range(len(right_ids))
-        for column in neighbours[row]
-    }
+        for slot in range(neighbours.shape[1])
+    ]
+
+
+def nearest_neighbour_pairs(left, right, k):
+    return {(left_id, right_id) for left_id, right_id, _ in nearest_neighbours(left, right, k)}
 
 
 def score(pairs, truth_pairs, total_possible):
