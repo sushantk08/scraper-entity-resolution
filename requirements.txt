@@ -1,0 +1,5 @@
+beautifulsoup4
+pandas
+pytest
+scikit-learn
+selenium
