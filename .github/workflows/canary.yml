@@ -1,0 +1,33 @@
+name: canary
+
+# This workflow tests the WEBSITE, not the code. It fetches a live page and
+# fails if the fields we depend on come back empty, which means the markup has
+# drifted and the parser needs updating.
+#
+# It is expected to fail one day. That is the entire point, and it is why it is
+# separate from tests.yml — the tests badge should only ever go red for a code
+# problem. canary.py carries a positive control, because a check that can only
+# pass is indistinguishable from no check at all.
+#
+# Only the books site runs here: it is plain HTML fetched with urllib, so CI
+# needs no browser. The quotes site is JavaScript-rendered and would need Chrome.
+
+on:
+  schedule:
+    - cron: "0 6 * * 1" # Mondays, 06:00 UTC. One request a week is polite.
+  workflow_dispatch:
+
+jobs:
+  canary:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - run: pip install -r requirements.txt
+
+      - run: python canary.py books

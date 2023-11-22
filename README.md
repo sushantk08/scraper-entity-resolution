@@ -149,7 +149,6 @@ python -m pytest -q            # 36 tests, all offline
 
 ## Not built yet
 
-Raw document store, normalised relational schema, a UI, CI wiring the canary in
-on a schedule, and a published benchmark (Abt–Buy or Amazon–Google) so the
-precision and recall above become comparable to published baselines instead of
-measured on a distribution I generated myself.
+Raw document store, normalised relational schema, a UI, and a published benchmark
+(Abt–Buy or Amazon–Google) so the precision and recall above become comparable to
+published baselines instead of measured on a distribution I generated myself.
