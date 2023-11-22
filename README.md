@@ -89,6 +89,63 @@ In whole pairs: threshold-only accepted 168 of 174 true pairs plus 5 false ones;
 best-partner accepted 173 and none false. The largest single improvement in the
 project came from changing the decision rule, not the model.
 
+## Does it generalise? Abt–Buy
+
+Everything above is measured on a benchmark `perturb.py` generated, so the
+obvious objection is that it only works on data built to be matchable. Abt–Buy
+is a published benchmark with human-labelled pairs: 1,081 Abt products against
+1,092 Buy products, 1,097 true pairs among 1,180,452 possible ones — **0.093%
+positive, against 16% in the generated benchmark.**
+
+`abt_buy.py` loads it into the same `(left, right, truth)` shape the rest of the
+pipeline already uses, so `block.py` runs on it unchanged. Candidate generation
+survives real data, and degrades honestly:
+
+| method          | recall | pairs kept | % of search space |
+|-----------------|--------|------------|-------------------|
+| exact key match | 0.015  | 16         | 0.00%             |
+| k = 1           | 0.888  | 1,092      | 0.09%             |
+| k = 5           | 0.977  | 5,460      | 0.46%             |
+| k = 6           | 0.981  | 6,552      | 0.56%             |
+| k = 10          | 0.988  | 10,920     | 0.93%             |
+| k = 20          | 0.995  | 21,840     | 1.85%             |
+
+Exact key matching collapses from 0.235 to **0.015** — sixteen pairs out of
+1,097. Two retailers essentially never write a product name identically, which
+is the entire justification for fuzzy blocking, now measured rather than
+asserted.
+
+**The blocking key was chosen by experiment, and two alternatives were rejected.**
+
+*Splitting letter-digit boundaries* so `CLI8C` and `CLI-8C` agree: recovered 2
+pairs, lost 5, net worse at every k. Contiguous part numbers like `KXTG6700B`
+are the rarest substrings in the data and fragmenting them destroys more signal
+than the hyphen repairs.
+
+*Deleting separators instead* (`CLI-8C` → `cli8c`) works, because it makes those
+two collide without breaking anything apart: 0.981 vs 0.976 at k=6, for the same
+number of pairs. This is now the key.
+
+*Unioning two keys* rather than choosing one: rejected. At an equal pair budget
+it never won — 6,429 pairs for 0.980 against 6,552 for 0.981. The two keys differ
+only in separator handling, so their candidate sets overlap heavily; 969 extra
+pairs bought 8 true ones. Multiple blocking passes pay off when the keys are
+*diverse*, not when they are spelling variants of each other.
+
+**What this dataset does and does not exercise.** Every record on both sides has
+a partner, so nothing ever needs to be rejected — precision here would measure
+wrong-partner selection, not rejection. And 5 Buy records have two true Abt
+partners (16 Abt records have two Buy partners), which puts a hard, measured
+recall ceiling of **0.995** on the one-partner-per-record rule that scored 0.997
+on the generated data. That assumption is provably wrong here, by a known amount.
+
+The remaining 13 pairs unreachable at k=10 are not a string-metric problem:
+
+
+The identity is not in the field being read. Getting past ~0.99 needs the
+description column, not a better distance function. Only blocking has been run
+on this dataset so far; the matcher has not.
+
 ## Things I am not going to overclaim
 
 - **That precision figure is 0 false positives out of 173 accepted pairs.** With
@@ -149,6 +206,8 @@ python -m pytest -q            # 36 tests, all offline
 
 ## Not built yet
 
-Raw document store, normalised relational schema, a UI, and a published benchmark
-(Abt–Buy or Amazon–Google) so the precision and recall above become comparable to
-published baselines instead of measured on a distribution I generated myself.
+Raw document store, normalised relational schema, a UI, and the matcher run on
+Abt–Buy so its precision and recall become comparable to published baselines —
+blocking is done, the classifier is not. Prices are blank 61% of the time on one
+side of that dataset and 46% on the other, so the price features need a
+"value is known" indicator before they can be trusted there.
