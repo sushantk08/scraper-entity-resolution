@@ -2,8 +2,8 @@
 
     python clean.py
 
-Reads data/books.csv, writes data/books_clean.csv — but refuses to write
-anything if a conversion silently failed on too many rows.
+Reads data/books.csv, writes data/books_clean.csv - but refuses to write anything
+if a conversion silently failed on too many rows.
 """
 
 from pathlib import Path
@@ -18,6 +18,10 @@ OUTPUT = DATA_DIR / "books_clean.csv"
 # More than this fraction unparseable means the source format changed,
 # not that a few rows are odd.
 MAX_FAILURE_RATE = 0.02
+
+# More than this fraction of descriptions empty means the detail crawl is not
+# landing. This is deliberately loose: it is a format check, not a quality gate.
+MAX_EMPTY_DESCRIPTION_RATE = 0.5
 
 RATING_WORDS = {"One": 1, "Two": 2, "Three": 3, "Four": 4, "Five": 5}
 
@@ -37,6 +41,7 @@ def stock_to_int(series):
 
 def normalise_title(series):
     """A comparison key: lowercase, punctuation gone, spaces collapsed.
+
     This is the column the deduplication step will match on later."""
     return (
         series.astype(str)
@@ -61,7 +66,13 @@ def clean(frame):
     out["stock_count"] = stock_to_int(frame["stock"])
     out["in_stock"] = out["stock_count"].fillna(0) > 0
     out["review_count"] = pd.to_numeric(frame["review_count"], errors="coerce")
-    out["description_words"] = frame["description"].fillna("").str.split().str.len()
+    # The description TEXT, not only its length. This file used to keep just
+    # description_words, which discarded the one field the matcher's residual
+    # failures point at: on Abt-Buy the unreachable pairs carry no identity in
+    # the title at all, and no better string metric fixes that. store.py caught
+    # the loss by reporting the column as empty for all 1000 books.
+    out["description"] = frame["description"].fillna("").str.strip()
+    out["description_words"] = out["description"].str.split().str.len()
     out["detail_url"] = frame["detail_url"]
     return out
 
@@ -69,7 +80,6 @@ def clean(frame):
 def validate(out):
     """Report on the cleaning and return a list of things that look broken."""
     problems = []
-
     for column in [
         "rating_stars",
         "price_listing_gbp",
@@ -80,7 +90,7 @@ def validate(out):
         rate = missing / len(out)
         print(f"  {column:20s} unparseable: {missing:5d}  ({rate:.2%})")
         if rate > MAX_FAILURE_RATE:
-            problems.append(f"{column}: {rate:.1%} unparseable — source format changed")
+            problems.append(f"{column}: {rate:.1%} unparseable - source format changed")
 
     # Two independent sources for the same number: the listing page and the
     # book's own page. If they disagree, the two-phase crawl is misaligned.
@@ -106,6 +116,19 @@ def validate(out):
     if bad_sum:
         problems.append(f"{bad_sum} books fail the excl + tax = incl check")
 
+    # Descriptions matter to the deduplication step, so losing them should fail
+    # here rather than surface as an empty column three files downstream. The
+    # column is checked only if present, because this function is also called
+    # directly from tests with hand-built frames.
+    if "description" in out.columns:
+        empty = int((out["description"].fillna("").str.len() == 0).sum())
+        rate = empty / len(out)
+        print(f"  {'description':20s} empty:       {empty:5d}  ({rate:.2%})")
+        if rate > MAX_EMPTY_DESCRIPTION_RATE:
+            problems.append(
+                f"description: {rate:.0%} empty - the detail pages are not landing"
+            )
+
     return problems
 
 
@@ -117,7 +140,11 @@ def describe(out):
           f"(mean £{out['price_listing_gbp'].mean():.2f})")
     print(f"  books with no description: "
           f"{int((out['description_words'] == 0).sum())}")
-
+    if "description" in out.columns:
+        lengths = out["description"].fillna("").str.len()
+        print(f"  description length: mean {lengths.mean():.0f} characters, "
+              f"longest {int(lengths.max())}, shortest non-empty "
+              f"{int(lengths[lengths > 0].min())}")
     for column in ["tax_gbp", "review_count", "in_stock"]:
         values = out[column].dropna().unique()
         if len(values) == 1:
@@ -128,20 +155,16 @@ def describe(out):
 def main():
     if not SOURCE.exists():
         raise SystemExit(f"ERROR: {SOURCE} missing — run parse.py first")
-
     frame = pd.read_csv(SOURCE)
     print(f"read {len(frame)} rows from {SOURCE}")
-
     out = clean(frame)
     problems = validate(out)
     describe(out)
-
     if problems:
         print("\nREFUSING TO WRITE — cleaning looks broken:")
         for problem in problems:
             print(f"  - {problem}")
         raise SystemExit(1)
-
     out.to_csv(OUTPUT, index=False)
     print(f"\nwrote {len(out)} rows x {len(out.columns)} columns to {OUTPUT}")
 

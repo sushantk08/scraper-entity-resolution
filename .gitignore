@@ -2,3 +2,5 @@
 __pycache__/
 pages/
 benchmark/
+data/*.db
+data/books_clean.csv
