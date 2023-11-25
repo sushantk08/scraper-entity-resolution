@@ -3,10 +3,11 @@
 # Resilient scraper -> entity resolution pipeline
 
 Scrapes a book catalogue, types and validates the result, loads it into a
-normalised database, then matches records that refer to the same thing - across two
+normalised database, matches records that refer to the same thing - across two
 dirty copies of the scraped data, and across two real retailer catalogues from a
-published benchmark - with every claim below measured rather than asserted,
-including the measurements that came out against me.
+published benchmark - and resolves the accepted pairs into entities, with every
+claim below measured rather than asserted, including the measurements that came
+out against me.
 
 Python, BeautifulSoup, Selenium, pandas, scikit-learn, SQLite, pytest. 40 tests,
 all offline.
@@ -19,7 +20,7 @@ fetch.py             listing pages -> pages/<site>/ (urllib, or Selenium if JS-r
 fetch_details.py     detail pages -> pages/<site>_detail/, resumable, failure-tolerant
 parse.py             saved HTML -> data/<site>.csv
 clean.py             typing + validation; refuses to write if the data looks wrong
-store.py             cleaned CSV -> SQLite: immutable records, derived decisions
+store.py             cleaned CSVs -> SQLite, three sources: immutable records, derived decisions
 canary.py            hits the LIVE site and fails if the markup has drifted
 perturb.py           builds a labelled matching benchmark from the clean data
 block.py             candidate generation, measured by recall
@@ -29,6 +30,8 @@ inspect_pairs.py     reports the true shape of a downloaded benchmark before tru
 match.py             pairwise classifier vs a real baseline, leak-guarded split
 ablate.py            which features actually earn their place
 decide.py            turning pair scores into one-to-one decisions
+resolve.py           accepted pairs -> entities in SQLite, and what closure costs
+sweep.py             the three decision policies over 20 paired splits
 error_analysis.py    the individual pairs that go wrong, and why
 volume_feature.py    the experiment behind the volume veto, kept in the repo
 abt_buy.py           loads a published benchmark into the same shape
@@ -47,6 +50,17 @@ scores perfectly by ranking alone and never has to reject anything. An earlier
 version of this benchmark lacked them and reported precision 1.000 at a
 threshold that was never exercised.
 
+**Read the single-split tables in this section as the favourable end of a range,
+not the centre.** Every figure below on the generated benchmark comes from one
+train/test split, seed 20260826. `sweep.py` later re-ran the shipping layer over
+20 splits, and that seed turned out to sit at or near the best of the twenty on
+nearly every metric at once - its precision, F1 and false-positive count for the
+threshold-only configuration are respectively the maximum, the maximum and the
+minimum of 20 draws. The seed is a date and was not chosen for its results, which
+is exactly why this is worth saying out loud: nobody cherry-picked anything and
+the numbers are still flattered. Where 20-split bands exist they are given, and
+they supersede the single-split figure.
+
 **Candidate generation** (character n-gram TF-IDF, k nearest neighbours):
 
 | method              | recall of true pairs |
@@ -61,7 +75,7 @@ k x |right| pairs, so reduction is mechanically `1 - k/|left|`. It is a knob, no
 a finding. Only recall carries information here.
 
 **Matching** (logistic regression; train/test split grouped by record id so no
-record's near-duplicates straddle the split):
+record's near-duplicates straddle the split). One split:
 
 | model                             | precision | recall | F1        |
 |-----------------------------------|-----------|--------|-----------|
@@ -70,7 +84,11 @@ record's near-duplicates straddle the split):
 | classifier + volume veto at 0.5   | 0.977     | 0.994  | **0.986** |
 | classifier + veto, threshold tuned| 0.988     | 0.960  | 0.974     |
 
-End-to-end recall, blocking losses included: **173 of 174 = 0.994**.
+That third row is the one configuration in this table the 20-split sweep also
+measured, and 0.986 is the **top** of its range: median 0.964, range 0.951 to
+0.986. The other three rows were never swept, so no band is claimed for them.
+
+End-to-end recall, blocking losses included: **173 of 174 = 0.994** on this split.
 
 The tuned threshold (0.816, chosen on the training fold) scored *worse* on the
 test fold than a naive 0.5. Tuning on one fold does not automatically transfer,
@@ -78,7 +96,7 @@ and this project stopped tuning thresholds because of it - see the measurement
 traps below, where widening the search made tuning worse rather than better.
 
 **Which features earn their place** (F1 at a fixed 0.5, and change vs. all
-features):
+features, one split):
 
 | feature set                 | F1    | delta  |
 |-----------------------------|-------|--------|
@@ -94,7 +112,9 @@ features):
 
 Every row uses the same fixed threshold on purpose. Letting each row pick its own
 threshold turns an ablation into a comparison of tuner luck, which is exactly the
-mistake documented further down.
+mistake documented further down. The large deltas at the bottom of this table are
+far bigger than the 0.035 spread the sweep found between splits; the +0.008 and
++0.006 at the top are not, and should not be read as established.
 
 Coefficients are printed but explicitly **not** labelled as importance - the
 features are correlated, and `length_ratio` carries a negative weight that would
@@ -102,26 +122,56 @@ be nonsense to read that way. Ablation is the honest version of that question.
 
 **Decisions, not just scores.** The classifier judges each pair alone, so it can
 accept two different left records for the same right record. Forbidding that
-requires no retraining, and is the largest single improvement in the project:
+requires no retraining, and it is the largest improvement in the project that
+costs nothing to obtain. Over 20 paired train/test splits (seeds 20260826 to
+20260845, flat threshold 0.5, veto applied, candidate table built once), median
+with full range across splits:
 
-| policy                     | precision | recall | F1        | false positives |
-|----------------------------|-----------|--------|-----------|-----------------|
-| threshold only             | 0.977     | 0.994  | 0.986     | 4               |
-| best partner per record    | 1.000     | 0.994  | **0.997** | 0               |
-| mutually-best partners     | 1.000     | 0.994  | 0.997     | 0               |
+| policy                     | precision            | recall               | F1                       | false positives | entity exactness     |
+|----------------------------|----------------------|----------------------|--------------------------|-----------------|----------------------|
+| threshold only             | 0.943 [0.920, 0.977] | 0.989 [0.967, 1.000] | 0.964 [0.951, 0.986]     | 11 [4, 16]      | 0.916 [0.893, 0.951] |
+| best partner per record    | 0.984 [0.969, 1.000] | 0.984 [0.967, 1.000] | 0.982 [0.972, 0.997]     | 3 [0, 6]        | 0.964 [0.933, 0.987] |
+| mutually-best partners     | 1.000 [0.994, 1.000] | 0.984 [0.967, 1.000] | **0.992 [0.981, 1.000]** | 0 [0, 1]        | 0.987 [0.969, 1.000] |
 
-In whole pairs: of 225 right-hand records in the test fold, 174 have a true
-partner and 51 have none. Best-partner accepted 173 pairs and got all 173 right.
+False negatives are 2 [0, 6] for threshold-only and 3 [0, 6] for both one-to-one
+policies, so mutually-best takes false positives from 11 to 0 at a median recall
+cost of one pair. Accepted-pair counts are 627 / 600 / 592 against 600 true pairs.
+Entity exactness is scored per held-out right record - the share whose final
+entity exactly equals its ground-truth entity - so its denominator is the same 225
+records the pair metrics use, and the two columns are comparable.
+
+**The ranges overlap heavily and the ranking is still decisive, which is the
+methodological point of the table.** Best-partner's F1 spans 0.972 to 0.997 and
+mutually-best's spans 0.981 to 1.000. Comparing those two intervals says
+"indistinguishable". Comparing the two policies *split by split* does not:
+
+| head-to-head vs mutually-best | F1 (better / worse / tied) | entity exactness |
+|-------------------------------|----------------------------|------------------|
+| threshold only                | 0 / 20 / 0                 | 0 / 20 / 0       |
+| best partner per record       | 0 / 19 / 1                 | 0 / 20 / 0       |
+
+Mutually-best is never once worse on either metric. The effect is small - about
++0.010 F1 and +0.023 entity exactness over best-partner - and it is consistent,
+and only the pairing makes it visible. This is the method `abt_buy_features.py`
+introduced for Abt-Buy, turned back on the benchmark it came from, and the first
+thing it did was overturn a claim this README had been making. See the
+measurement traps.
+
+In whole pairs on the reference split: of 225 right-hand records in the test fold,
+174 have a true partner and 51 have none. Best-partner accepted 173 pairs and got
+all 173 right.
 
 `decide.py` also prints each policy at a threshold tuned on the train fold and at
 a threshold chosen with test labels - an oracle that is not achievable, printed
-only to bound what better threshold selection could buy. **The oracle equals the
-flat 0.5 row for all three policies, so a perfect threshold would add +0.000 F1.**
-Shipping an untuned 0.5 is a measured result here, not laziness.
+only to bound what better threshold selection could buy. On the reference split
+**the oracle equals the flat 0.5 row for all three policies, so a perfect
+threshold would add +0.000 F1.** Shipping an untuned 0.5 is a measured result
+here rather than laziness - though that particular measurement is one split and
+has not been re-run over the twenty.
 
 ## Storage: immutable records, derived decisions
 
-`store.py` loads the cleaned CSV into SQLite. Three tables, and the split between
+`store.py` loads the cleaned CSVs into SQLite. Three tables, and the split between
 the first two is the entire design:
 
 | table           | holds                                                   |
@@ -147,6 +197,15 @@ updated in place**. That line is the point of the whole design: `record_id` valu
 survived, so anything stored in `record_entity` still points where it did before.
 An upsert reporting 1000 *inserted* would have meant fresh ids and silently
 orphaned every decision built on the old ones.
+
+**Three sources load, not one, and that is what makes the database worth having.**
+1000 books with 1000 distinct UPCs have nothing to merge. `SOURCES` also loads the
+850 left records and the 750 right records the benchmark is built from, 2600 rows
+in total, with a per-source column map - because `price_incl_tax_gbp`,
+`price_listing_gbp` and `price_gbp` are one field under three names, which is a
+live instance of the problem this repo is about rather than a hypothetical one.
+The right-hand source stores `category` for 672 of 750 records; the other 78 are
+genuinely absent and store as NULL.
 
 The update uses `COALESCE(excluded.col, record.col)`, so re-running from a CSV that
 has lost a column cannot delete data an earlier run loaded. The cost, stated
@@ -179,6 +238,72 @@ and the loader, and SQLite keeps both testable offline in milliseconds - "no net
 in CI" is a rule this project has kept since its first commit. `connect()` is the
 only function that knows what database this is.
 
+## Resolution: pairs into entities, and what closure costs
+
+`resolve.py` reads the 1600 left and right records back **out of the database**
+rather than out of the CSVs, runs blocking and the classifier over them, applies a
+decision policy, unions the accepted pairs, and writes one `entity` row per
+connected component plus a `record_entity` row per member. Reading from SQLite is
+the point: it makes the storage layer load-bearing instead of decorative, and it
+doubles as proof the loader kept everything the matcher needs. It found all 600
+labelled pairs and all 1600 records, and wrote **1008 entities covering 1600
+records** under the shipping policy - 416 singletons and 592 pairs.
+
+Records that match nothing get their own single-member entity. A record with no
+partner is not an error to be dropped; it is a real thing the catalogue mentions
+once.
+
+**Transitive closure was the open question, and the answer is unambiguous.** Union
+-find does not only merge the pairs the matcher accepted. If A-B and B-C are both
+accepted then A-C is merged too, whether or not the matcher ever scored that pair,
+and whether or not it scored it *below threshold and rejected it*. Those implied
+merges are the price of closure, so `resolve.py` counts them and checks each one
+against ground truth:
+
+| policy                  | closure merges per split | across 20 splits | of those, correct |
+|-------------------------|--------------------------|------------------|-------------------|
+| threshold only          | 73 [61, 89]              | 1,460            | **0**             |
+| best partner per record | 8 [8, 9]                 | 170              | **0**             |
+| mutually-best partners  | 0 [0, 0]                 | 0                | -                 |
+
+**1,630 implied merges across every split and both permissive policies, and not
+one of them was correct.** On this data closure is pure cost and never once
+recovers a link the matcher missed. It also *multiplies*: on the reference split
+threshold-only's 33 wrong pairs produced 68 further wrong merges, because a false
+pair acts as a bridge between two components and joins everything on both sides of
+it. Damage grows faster than the false-positive count.
+
+Two details that make the cost concrete on that split. The 12 merges of pairs the
+matcher had actively rejected scored 0.000 to 0.477 with a mean of 0.146 against a
+bar of 0.5 - these are not borderline calls that a slightly different threshold
+would have caught. And 50 of the 56 merges of pairs blocking never even generated
+are same-source, right-to-right: blocking is cross-source only, so most of
+closure's damage lands in a space the matcher never sees and cannot defend.
+
+**Ground truth for this audit is the connected components of the labels, not the
+labelled rows.** `truth.csv` labels left-to-right pairs only, so a right-to-right
+merge appears in no label and would score as wrong by default. But if L is the
+same book as R1 and as R2, then R1 and R2 are the same book. Union-find over the
+600 labels gives the 1000 true entities, and a record in no label is a
+ground-truth singleton, so merging it into anything is wrong.
+
+**Mutually-best reports zero because zero is the only number it can report**, and
+the audit says so rather than taking credit. That policy accepts a pair only when
+each record is the other's best available option, so no record can appear in two
+accepted pairs, so the accepted set is already disjoint and union-find has nothing
+left to join. Closure over a matching is the identity function. The `0 [0, 0]`
+line is a demonstration of a structural fact, not evidence about the data - which
+is precisely why the audit has to run under all three policies. See the
+measurement traps.
+
+**Entity-level and pair-level metrics disagree, and only the entity one separates
+the two policies worth choosing between.** On the reference split best-partner and
+mutually-best produced identical pair metrics - 1.000 / 0.994 / 0.997, 0 false
+positives, 1 false negative, indistinguishable - while their entity counts were
+974 and 989 exact out of 1000. A pair metric cannot see that one wrong link welds
+two entities together. Any project reporting only pair F1 will call two materially
+different policies equivalent, and this one did exactly that until the sweep.
+
 ## Volume numbers: a constraint, not a feature
 
 Error analysis showed that 5 of 7 false positives were series confusion - Fruits
@@ -187,7 +312,7 @@ numbers disagree the pair is never a match: that signal fires on 134 of 3,750
 candidate pairs with **0 true matches among them**.
 
 The interesting question was how to use it. Three volume features fed to the
-model, or one veto applied after scoring:
+model, or one veto applied after scoring (one split):
 
 | configuration                | precision | recall | F1        | false positives |
 |------------------------------|-----------|--------|-----------|-----------------|
@@ -202,11 +327,17 @@ about. Both false positives that the 9-feature model introduced contain no volum
 numbers at all. A veto touches only the 134 pairs it is actually about, and can
 only ever lower a score.
 
-**And under one-to-one assignment, all four configurations are identical** -
-0.997 F1, 0 false positives, and not one differing decision between any pair of
-them. One-to-one assignment was already cleaning up series confusion for free.
-So the veto is cheap insurance for data where one-to-one is unavailable, and is
-reported that way rather than as a headline.
+**And under one-to-one assignment, all four configurations were identical on this
+split** - 0.997 F1, 0 false positives, and not one differing decision between any
+pair of them. One-to-one assignment was already cleaning up series confusion for
+free. So the veto is cheap insurance for data where one-to-one is unavailable, and
+is reported that way rather than as a headline.
+
+That "identical" result rests on the same single split that produced the
+mutually-best artefact described below, and it has **not** been re-checked over 20
+splits. Treat it as untested rather than established. The sweep applies the veto in
+every configuration it measures, so nothing in the banded table above depends on
+the question being settled.
 
 A test pins the part that could quietly go wrong: only *marked* numbers count.
 `Vol. 3`, `Book 2` and `#11` are volumes; `1984` and `orange: The Complete
@@ -225,6 +356,32 @@ false positive, and `decide.py` duly reported precision 1.000 at a threshold tha
 was never exercised - it measured ranking and printed it as precision. Fixed with
 a three-way split and a test suite over the generated data itself. Any metric
 that reads 1.000 now gets audited before it gets quoted.
+
+**An audit that could not fail: the same mistake, twice, months apart.** The first
+version of the closure audit ran under the shipping policy only, reported that
+closure merged nothing, and I read that as a fact about the data. It is not. That
+policy makes the accepted set disjoint by construction, so the audit would print
+zero on any input whatsoever, including input designed to break it. A measurement
+with no failure mode is not evidence, and I had already written that sentence once
+about the benchmark. Fixed by auditing all three policies, which is where the
+1,630 merges came from.
+
+**A finding that was one split.** This README used to state that requiring
+partners to be *mutually* best "bought literally nothing" on the generated
+benchmark, and built an argument on top of it about negative results failing to
+transfer to real data. On the reference split the two policies really did produce
+byte-identical output. Over 20 paired splits mutually-best wins 19 of 20 on F1 and
+20 of 20 on entity exactness and loses neither once. The claim was an artefact of a
+single draw, the argument built on it was wrong, and both are retracted above. What
+makes this worse than an ordinary error is that the pairing method needed to catch
+it was already in this repo, applied to the other benchmark, with a paragraph
+explaining why it was necessary.
+
+**A percentage that rounded an error out of existence.** The closure audit printed
+`truly a match: 591 (100%)` for a policy that had accepted 592 pairs. One of those
+was wrong, and the rounding deleted it. The audit now prints counts and no
+percentages, because the only interesting cases in an error report are the small
+ones.
 
 **A tuner leaking into a comparison.** `decide.py` used to tune a threshold per
 policy on the train fold. When three features were added, one policy's pick moved
@@ -257,6 +414,15 @@ statistic over those seven rows means anything. Resampling the split 20 times an
 counting per-split wins is testable, and it turned a suggestive ordering into a
 signed result that *reverses* depending on which layer you measure. One feature
 was then dropped on evidence instead of on the shape of the table.
+
+**A silent type mismatch that would have printed a normal-looking table.**
+`external_id` is TEXT in SQLite, and `pd.read_csv` types the benchmark's numeric
+`right_id` as int64. The two never compare equal, so the join that attaches labels
+to stored records matches nothing, `is_match` is zero on every row, and the
+classifier trains on no positive examples at all - while still fitting, still
+scoring, and still printing a results table of the usual shape. `resolve.py` reads
+the labels with `dtype=str` and refuses to continue if zero or only some labelled
+pairs land on stored records.
 
 **Two silent data losses, caught by making the code say what it stored.**
 `store.py`'s first run stored 1000 NULL prices, because `clean.py` names the
@@ -319,8 +485,7 @@ a partner, so nothing ever needs to be rejected - precision here would measure
 wrong-partner selection, not rejection, and those are different claims. And 5 Buy
 records have two true Abt partners (16 Abt records have two Buy partners), which
 puts a hard, measured recall ceiling of **0.995** on the one-partner-per-record
-rule that scored 0.997 on the generated data. That assumption is provably wrong
-here, by a known amount.
+rule. That assumption is provably wrong here, by a known amount.
 
 The 13 pairs unreachable at k=10 are not a string-metric problem. Abt sells
 CLI8C, CLI8M, CLI8Y, CLI8R and CL41CL, so the discriminating substring is about
@@ -359,15 +524,17 @@ answer different questions. A review queue a human works through wants the 0.912
 an automatic merge nobody checks wants the 0.962 precision. Any single F1 quoted
 here hides that choice, so the objective goes next to the figure.
 
-**`mutually-best` beats best-partner here after buying literally nothing on the
-generated data** - 0.915 against 0.906, false positives 22 down to 11. Both sides
-of Abt-Buy are real catalogues competing for partners rather than one side derived
-from the other. A measured negative result did not transfer, which is the best
-argument in this repo for keeping negative results instead of deleting them.
+**Mutually-best beats best-partner here too** - 0.915 against 0.906, false
+positives 22 down to 11. This README previously said the same policy bought
+nothing on the generated data and drew a lesson about results failing to transfer
+between datasets. That was wrong: the sweep found +0.010 F1 on the generated
+benchmark, consistent across 19 of 20 splits, which is close to the +0.009 seen
+here. The policy pays roughly the same small amount on both benchmarks, and the
+apparent disagreement was one favourable split rather than a property of the data.
 
 And the classifier only just beats one number: 0.702 against 0.660 for
 `cosine >= 0.497`, and it gets there by trading precision away for recall. On the
-generated benchmark the same design beat its baseline 0.986 to 0.883.
+generated benchmark the same design beat its baseline 0.964 to 0.883.
 
 **Missing values are handled rather than defaulted.** Price is blank on 61% of Abt
 records and 46% of Buy records. A blank arriving at the model as 0.0 would read as
@@ -375,6 +542,12 @@ records and 46% of Buy records. A blank arriving at the model as 0.0 would read 
 as agreement. Unknowns become NaN and are filled with the **training fold's** mean;
 imputing from the whole table would leak. On the test fold that fills 2,625 of
 3,280 rows for price (80%), 1,290 for description (39%) and 10 for manufacturer.
+
+The same class of bug reaches the resolution layer from a different direction:
+`bool(NaN)` is True in Python, so an unknown category read straight out of the
+database would count as a real value for the "same category" feature. 78 of the
+750 right-hand records have no category, and `resolve.py` fills those with the
+empty string before any comparison happens.
 
 ### Which features earn their place on real data: almost none
 
@@ -404,6 +577,7 @@ description features worsen the fixed-0.5 cut and improve the per-record ranking
 That is coherent - they shift where probability mass sits without changing which
 candidate comes out on top, so a hard threshold gets miscalibrated while an argmax
 gets better. Every other row in both columns falls out of that one mechanism.
+
 Which makes the layer you ship the only one whose verdict counts - the same lesson
 as the tuner trap, in a new costume. `description_known` was dropped because it is
 the one row that is *dominated*: 18 of 20 better at the pair layer, and a dead tie
@@ -433,28 +607,45 @@ that ships.
 
 One limit on all of it: the 20 splits resample one fixed candidate table. That
 establishes an effect is not split luck. It cannot establish it is not this
-dataset.
+dataset. The same limit applies to `sweep.py` on the generated benchmark.
 
 ## Things I am not going to overclaim
 
-- **That precision figure is 0 false positives out of 173 accepted pairs.**
-  `decide.py` computes and prints the Clopper-Pearson floor rather than letting me
-  write one by hand: the defensible claim is **>= 0.983**, not 1.000.
-- **`mutually-best` bought nothing on the generated benchmark** - identical to
-  best-partner on every figure. It was kept as a measured negative result rather
-  than deleted, and on Abt-Buy it turned out to be the best policy in the file. A
-  negative result belongs to the data it was measured on.
+- **The headline F1 is 0.992, not 0.997.** The lower figure is the median of 20
+  splits and the higher one is a single split that happens to sit near the top of
+  that range. The same correction applies to the threshold-only configuration,
+  whose 0.986 has a median of 0.964 behind it. Nothing was cherry-picked and the
+  numbers were still flattered, which is the whole reason the sweep exists.
+- **That 1.000 precision is 0 false positives out of about 173 accepted pairs on
+  one split.** `decide.py` computes and prints the Clopper-Pearson floor rather
+  than letting me write one by hand: the defensible claim from a single split is
+  **>= 0.983**. Across 20 splits the policy produced 0 false positives in most and
+  never more than 1, which is stronger evidence than the interval, and still not
+  a licence to write 1.000 unqualified.
+- **The claim that mutually-best "bought nothing" on the generated benchmark was
+  wrong and is retracted.** It came from one split on which the two policies
+  produced identical output. It stood in this README for some time and shaped an
+  argument in the Abt-Buy section that has also been withdrawn.
 - **The 0.915 on Abt-Buy is not comparable to published numbers**, and is not
   quoted as though it were. The comparable figure is **0.702**, for the structural
   reason given in that section.
-- **The volume veto also buys nothing once one-to-one assignment is in place.**
-  Zero changed decisions. It earns its place only on the threshold-only
-  configuration, and that is what the tables say.
+- **The volume veto buying nothing once one-to-one assignment is in place is a
+  single-split result that has not been re-tested.** It is the neighbour of the
+  claim that just turned out to be an artefact, measured on the same split, and it
+  should be read as an open question rather than a finding.
+- **Entity exactness above is scored on held-out right records only.** The
+  `resolve.py` run prints a whole-database figure - 989 of 1000 entities exact -
+  which includes the training fold and is therefore flattered. The banded table
+  uses the held-out figure, 0.987, so it can sit beside the pair metrics.
+- **Closure never helping is a result about this data.** 1,630 implied merges and
+  zero correct is a strong finding on a benchmark whose duplicates come in pairs.
+  A catalogue with genuine triples - three retailers listing one book - is exactly
+  where closure would earn its keep, and this benchmark contains none.
 - **The generated benchmark is generated, not human-labelled.** `perturb.py`
   writes both the noise and the labels, and book titles are long enough that a
   corrupted copy is still far from any other book. Real catalogues are harder.
   **0.889 (title features only) is the number I would expect to survive contact
-  with real data, not 0.986** - and Abt-Buy's 0.702 is evidence for exactly that.
+  with real data, not 0.992** - and Abt-Buy's 0.702 is evidence for exactly that.
 - **One-to-one matching is an assumption the generated data satisfies by
   construction.** A real catalogue can carry two legitimate editions of the same
   book. Abt-Buy shows the cost: a measured ceiling of 0.995.
@@ -471,10 +662,6 @@ dataset.
   against the site's own breadcrumb URLs, so the parser is right and the site is
   wrong. Category agreement is therefore weak evidence on common values and
   strong on rare ones - IDF weighting is the principled fix, and is not done yet.
-- **The database has never held a resolution decision.** `entity` and
-  `record_entity` exist, are indexed, and are empty. The schema is designed and
-  loaded; the layer that fills it is not written yet, and this README does not
-  imply otherwise.
 
 ## Two things here that most scraper projects skip
 
@@ -500,16 +687,22 @@ python fetch.py books          # 50 listing pages -> pages/books/
 python fetch_details.py books  # 1000 detail pages, resumable
 python parse.py books          # -> data/books.csv
 python clean.py                # typing + validation -> data/books_clean.csv
-python store.py                # -> data/pipeline.db, needs clean.py to have run
+python perturb.py              # build the labelled benchmark: left, right, truth
+python store.py                # -> data/pipeline.db, all three sources
 python canary.py books         # live check: has the markup drifted?
-python perturb.py              # build the labelled benchmark
 python block.py                # candidate generation, measured
 python match.py                # classifier vs baseline
 python ablate.py               # what the features are worth
 python decide.py               # scores -> one-to-one decisions
+python resolve.py              # accepted pairs -> entities, plus the closure audit
+python sweep.py                # the three policies over 20 paired splits
 python error_analysis.py       # the pairs that go wrong, individually
 python -m pytest -q            # 40 tests, all offline
 ```
+
+`perturb.py` comes before `store.py` because the loader reads all three sources,
+and two of them are files `perturb.py` writes. `resolve.py` reads its records out
+of the database, so it needs `store.py` to have run.
 
 `data/books.csv` is committed, so every step from `clean.py` onwards runs without
 touching the live site. `data/books_clean.csv` and `data/pipeline.db` are **not**
@@ -530,12 +723,8 @@ python abt_buy_features.py     # 20 resampled splits: does a feature matter?
 
 ## Not built yet
 
-A raw document store and a UI. The normalised schema now exists and is loaded;
-what is missing is the layer that fills it - union-find over the pairs the matcher
-accepted, plus an audit of how many within-entity pairs the matcher scored *below*
-threshold. Transitive closure will merge records the matcher explicitly rejected,
-and that count is the honest price of closure, so it belongs in the output rather
-than buried.
+A UI. The pipeline runs end to end and the database now holds resolution
+decisions, but there is nothing to look at them with.
 
 Blocking recall of 0.988 is now the binding cap on Abt-Buy recall, and the
 residual misses point at the description column rather than at a better string
@@ -543,7 +732,13 @@ metric - so `description` as a genuinely *diverse* second blocking key is the ne
 experiment worth running. The rejected union-of-keys result says spelling variants
 do not pay; a description is not a spelling variant of a product name.
 
+The generated benchmark has no self-blocking pass, so the single-source catalogue
+cannot yet be run as a negative control that should merge nothing. `block.py` is
+left-against-right only. That control is worth more than it sounds: closure's
+damage on this data lands mostly in same-source pairs the matcher never scores.
+
 Also outstanding: IDF weighting of category agreement, a length-aware treatment of
-cosine for the 'Arena'/'Arnea' case, and generating these result tables from a
-script with a drift test, so they cannot go stale by hand. Four of them already
-did once.
+cosine for the 'Arena'/'Arnea' case, tests over the resolution layer, and
+generating these result tables from a script with a drift test so they cannot go
+stale by hand. Several of them already did, twice - once by drifting out of date,
+and once by being a single split presented as a result.
