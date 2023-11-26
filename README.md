@@ -708,6 +708,15 @@ are real: `store.py` refuses to run before `clean.py` rather than loading the
 unvalidated raw scrape, and `resolve.py` reads its records out of the database, so
 it does need `store.py` first.
 
+**Verified from a clean clone.** The committed repo cloned into an empty directory,
+then `clean.py`, `perturb.py`, `store.py`, `resolve.py` in that order, reproduced the
+reference split's resolution figures exactly: 592 accepted pairs, 1008 entities, 989
+of 1000 exactly equal to a ground-truth entity, held-out 1.000 / 0.994 / 0.997.
+`perturb.py` rewrote the three committed benchmark CSVs byte-identically, so the
+benchmark these numbers were measured on regenerates rather than having to be taken
+on trust. And `store.py` run before `clean.py` refused and named the script to run,
+so that branch is exercised rather than assumed.
+
 `data/books.csv` is committed, so every step from `clean.py` onwards runs without
 touching the live site. `data/books_clean.csv` and `data/pipeline.db` are **not**
 committed: both are derived, both rebuild offline in seconds, and tracking the
