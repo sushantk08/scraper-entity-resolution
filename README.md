@@ -9,7 +9,7 @@ published benchmark - and resolves the accepted pairs into entities, with every
 claim below measured rather than asserted, including the measurements that came
 out against me.
 
-Python, BeautifulSoup, Selenium, pandas, scikit-learn, SQLite, pytest. 40 tests,
+Python, BeautifulSoup, Selenium, pandas, scikit-learn, SQLite, pytest. 60 tests,
 all offline.
 
 ## What is actually here
@@ -697,12 +697,16 @@ python decide.py               # scores -> one-to-one decisions
 python resolve.py              # accepted pairs -> entities, plus the closure audit
 python sweep.py                # the three policies over 20 paired splits
 python error_analysis.py       # the pairs that go wrong, individually
-python -m pytest -q            # 40 tests, all offline
+python -m pytest -q            # 60 tests, all offline
 ```
 
-`perturb.py` comes before `store.py` because the loader reads all three sources,
-and two of them are files `perturb.py` writes. `resolve.py` reads its records out
-of the database, so it needs `store.py` to have run.
+`store.py` loads all three sources, two of which are files `perturb.py` writes.
+Both are committed, so on a fresh clone it loads them whether or not `perturb.py`
+has run - verified on a clean clone, where it loaded all three either way. The order
+above records where those files come from rather than a dependency. Two dependencies
+are real: `store.py` refuses to run before `clean.py` rather than loading the
+unvalidated raw scrape, and `resolve.py` reads its records out of the database, so
+it does need `store.py` first.
 
 `data/books.csv` is committed, so every step from `clean.py` onwards runs without
 touching the live site. `data/books_clean.csv` and `data/pipeline.db` are **not**
@@ -738,7 +742,7 @@ left-against-right only. That control is worth more than it sounds: closure's
 damage on this data lands mostly in same-source pairs the matcher never scores.
 
 Also outstanding: IDF weighting of category agreement, a length-aware treatment of
-cosine for the 'Arena'/'Arnea' case, tests over the resolution layer, and
+cosine for the 'Arena'/'Arnea' case, a test suite for store.py, and
 generating these result tables from a script with a drift test so they cannot go
 stale by hand. Several of them already did, twice - once by drifting out of date,
 and once by being a single split presented as a result.
