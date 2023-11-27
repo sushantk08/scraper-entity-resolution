@@ -25,6 +25,8 @@ but this number is not as cleanly held-out as the pair metrics beside it.
 Nothing here writes to the database. resolve.py owns the entity tables.
 """
 
+import json
+import os
 from itertools import combinations
 
 import numpy as np
@@ -35,6 +37,16 @@ import resolve
 import store
 
 SEEDS = [match.SEED + offset for offset in range(20)]
+
+
+def plain(value):
+    """numpy scalars are not JSON-serialisable and np.int64 is not a subclass of int,
+    so a count raises here rather than being silently coerced to something else."""
+    if isinstance(value, np.integer):
+        return int(value)
+    if isinstance(value, np.floating):
+        return float(value)
+    raise TypeError(f"{type(value).__name__} in the results: {value!r}")
 
 
 def band(values, decimals):
@@ -126,6 +138,32 @@ def main():
         if seed == SEEDS[0]:
             print(f"  {len(held_out)} right records and "
                   f"{int(test_truth.sum())} true pairs in the first test fold")
+
+    # README.md's sweep tables are rendered from this file by tables.py, so a
+    # number in the README cannot drift from the run that produced it. Raw per-split
+    # values, not the medians, so a different summary needs no re-run. Deliberately
+    # no timestamp: an unchanged run must produce an unchanged file, or the diff
+    # stops answering the only question worth asking of it.
+    os.makedirs("results", exist_ok=True)
+    with open(os.path.join("results", "sweep.json"), "w", newline="\n") as handle:
+        json.dump(
+            {
+                "seeds": SEEDS,
+                "k": resolve.K,
+                "threshold": resolve.THRESHOLD,
+                "policy_order": resolve.POLICY_ORDER,
+                "write_policy": resolve.WRITE_POLICY,
+                "candidate_pairs": len(table),
+                "results": results,
+            },
+            handle,
+            default=plain,
+            indent=2,
+            sort_keys=True,
+        )
+        handle.write("\n")
+    print(f"\n  wrote results/sweep.json - {len(SEEDS)} splits x "
+          f"{len(resolve.POLICY_ORDER)} policies")
 
     for name in resolve.POLICY_ORDER:
         runs = results[name]
