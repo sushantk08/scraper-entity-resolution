@@ -9,7 +9,7 @@ published benchmark - and resolves the accepted pairs into entities, with every
 claim below measured rather than asserted, including the measurements that came
 out against me.
 
-Python, BeautifulSoup, Selenium, pandas, scikit-learn, SQLite, pytest. 68 tests,
+Python, BeautifulSoup, Selenium, pandas, scikit-learn, SQLite, pytest. 92 tests,
 all offline.
 
 ## What is actually here
@@ -709,7 +709,7 @@ python resolve.py              # accepted pairs -> entities, plus the closure au
 python sweep.py                # the three policies over 20 paired splits
 python tables.py --write       # re-render this README's tables from it
 python error_analysis.py       # the pairs that go wrong, individually
-python -m pytest -q            # 68 tests, all offline
+python -m pytest -q            # 92 tests, all offline
 ```
 
 `store.py` loads all three sources, two of which are files `perturb.py` writes.
