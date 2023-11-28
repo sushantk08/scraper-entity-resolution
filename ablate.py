@@ -18,6 +18,8 @@ These rows show what they would have been worth as trained features, so "we chos
 a constraint over a coefficient" is a measured claim and not a preference.
 """
 
+import json
+import os
 from sklearn.linear_model import LogisticRegression
 from sklearn.preprocessing import StandardScaler
 
@@ -25,6 +27,10 @@ import block
 import match
 
 VOLUME = match.CONSTRAINTS + match.DIAGNOSTIC
+RESULTS = os.path.join("results", "ablation.json")
+REFERENCE = "all features"
+SHIPPED = "all features + volume veto"
+THRESHOLD = 0.5
 
 GROUPS = {
     "all features": match.FEATURES,
@@ -70,8 +76,18 @@ def main():
 
     print(f"{'feature set':<28}{'precision':>11}{'recall':>9}{'f1':>8}{'vs all':>9}")
     reference = None
+    recorded = {}
+    if next(iter(GROUPS)) != REFERENCE:
+        raise SystemExit(
+            f"the 'vs all' column is measured against whichever group comes first, "
+            f"but that is no longer {REFERENCE!r} - this table and the README's "
+            f"delta column would silently disagree"
+        )
     for name, features in GROUPS.items():
         precision, recall, f1 = fit_and_score(train, test, features)
+        recorded[name] = {
+            "precision": float(precision), "recall": float(recall), "f1": float(f1),
+        }
         if reference is None:
             reference = f1
         print(
@@ -81,11 +97,36 @@ def main():
     # Not a feature set — a decision rule on top of the first row. This is what
     # actually ships.
     precision, recall, f1 = fit_and_score(train, test, match.FEATURES, veto=True)
+    recorded[SHIPPED] = {
+        "precision": float(precision), "recall": float(recall), "f1": float(f1),
+    }
     print(
-        f"{'all features + volume veto':<28}{precision:>11.3f}{recall:>9.3f}"
+        f"{SHIPPED:<28}{precision:>11.3f}{recall:>9.3f}"
         f"{f1:>8.3f}{f1 - reference:>+9.3f}   <- shipped"
     )
 
+    os.makedirs("results", exist_ok=True)
+    # No timestamp on purpose: an unchanged run has to produce an unchanged file, or
+    # the diff stops being able to answer "did any number move?".
+    with open(RESULTS, "w", encoding="utf-8", newline="\n") as handle:
+        json.dump(
+            {
+                "seed": match.SEED,
+                "k": match.K,
+                "threshold": THRESHOLD,
+                "train_pairs": len(train),
+                "test_pairs": len(test),
+                "reference": REFERENCE,
+                "shipped": SHIPPED,
+                "order": list(GROUPS) + [SHIPPED],
+                "results": recorded,
+            },
+            handle,
+            indent=2,
+            sort_keys=True,
+        )
+        handle.write("\n")
+    print(f"\nwrote {RESULTS} - {len(recorded)} feature sets")
     print("\nHow to read this: if 'title similarity only' lands close to 'all")
     print("features', the pipeline works on titles and price is a bonus. If it")
     print("lands far below — or if 'price alone' scores well — then the headline")

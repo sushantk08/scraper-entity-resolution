@@ -1,4 +1,4 @@
-"""The README's three sweep tables, rendered from results/sweep.json.
+"""The README's generated tables, rendered from the runs recorded under results/.
 
 Four numbers in this README went stale once, and three findings that were really
 one-split artefacts got published as results. Both failures were possible because the
@@ -25,7 +25,22 @@ import statistics
 import sys
 
 RESULTS = os.path.join("results", "sweep.json")
+ABLATION = os.path.join("results", "ablation.json")
 README = "README.md"
+
+# Only "cosine alone" actually differs, but all nine are listed so that a new feature
+# group cannot reach the README under its internal name by defaulting to itself.
+FEATURE_SETS = {
+    "all features": "all features",
+    "all features + volume veto": "all features + volume veto",
+    "all + volume as features": "all + volume as features",
+    "everything except category": "everything except category",
+    "everything except price": "everything except price",
+    "title similarity only": "title similarity only",
+    "cosine alone": "similarity score alone",
+    "price alone": "price alone",
+    "volume signals alone": "volume signals alone",
+}
 
 DISPLAY = {
     "threshold only": "threshold only",
@@ -34,12 +49,24 @@ DISPLAY = {
 }
 
 
-def load():
+def load_sweep():
     with io.open(RESULTS, encoding="utf-8") as handle:
         data = json.load(handle)
     missing = set(data["policy_order"]) - set(DISPLAY)
     if missing:
         sys.exit(f"no README name for {sorted(missing)} - add it to DISPLAY")
+    return data
+
+
+def load():
+    """Every recorded run the README needs, keyed by source. Each BLOCKS entry names
+    the one it reads, so a builder cannot quietly render from the wrong file."""
+    data = {"sweep": load_sweep()}
+    with io.open(ABLATION, encoding="utf-8") as handle:
+        data["ablation"] = json.load(handle)
+    missing = set(data["ablation"]["order"]) - set(FEATURE_SETS)
+    if missing:
+        sys.exit(f"no README name for {sorted(missing)} - add it to FEATURE_SETS")
     return data
 
 
@@ -134,12 +161,33 @@ def closure_cost(data):
 
 # Located by marker once the markers exist. Before that, by a predicate on the header
 # row - two of these tables start with "| policy", so the first column is not enough.
+def ablation(data):
+    """Ordered by F1 descending, which is the README's order and not GROUPS' order.
+
+    The delta is measured BEFORE rounding. Rounding first gives +0.009 for the shipped
+    row where the honest answer is +0.008, and two rows of the committed table would
+    then disagree by one in the last digit for a reason nobody could find.
+    """
+    reference = data["results"][data["reference"]]["f1"]
+    rows = []
+    for name in sorted(data["order"], key=lambda n: -data["results"][n]["f1"]):
+        f1 = data["results"][name]["f1"]
+        # "-", not "+0.000": a row's distance from itself is not information.
+        delta = "-" if name == data["reference"] else f"{f1 - reference:+.3f}"
+        rows.append([FEATURE_SETS[name], f"{f1:.3f}", delta])
+    return render(["feature set", "F1", "delta"], rows)
+
+
 BLOCKS = [
-    ("policy-comparison", policy_comparison,
+    ("ablation", "ablation", ablation,
+     # Two README tables have a "| feature set" header - the other is the Abt-Buy
+     # ablation at ~line 573, whose columns are "pair F1" / "beats all".
+     lambda line: line.startswith("| feature set") and "delta" in line),
+    ("policy-comparison", "sweep", policy_comparison,
      lambda line: line.startswith("| policy") and "entity exactness" in line),
-    ("head-to-head", head_to_head,
+    ("head-to-head", "sweep", head_to_head,
      lambda line: "head-to-head vs" in line),
-    ("closure-cost", closure_cost,
+    ("closure-cost", "sweep", closure_cost,
      lambda line: line.startswith("| policy") and "closure merges" in line),
 ]
 
@@ -147,7 +195,7 @@ END = "<!-- end -->"
 
 
 def blocks(data):
-    return [(name, builder(data)) for name, builder, _ in BLOCKS]
+    return [(name, builder(data[source])) for name, source, builder, _ in BLOCKS]
 
 
 def splice(lines, name, table, matches):
@@ -170,7 +218,7 @@ def write(data):
     text = io.open(README, encoding="utf-8", newline="").read()
     ending = "\r\n" if "\r\n" in text else "\n"
     lines = text.split(ending)
-    for (name, table), (_, _, matches) in zip(blocks(data), BLOCKS):
+    for (name, table), (_, _, _, matches) in zip(blocks(data), BLOCKS):
         lines = splice(lines, name, table, matches)
     io.open(README, "w", encoding="utf-8", newline="").write(ending.join(lines))
     print(f"spliced {len(BLOCKS)} tables into {README}")

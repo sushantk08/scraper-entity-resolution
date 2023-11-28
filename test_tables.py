@@ -38,13 +38,14 @@ def test_the_drift_test_can_actually_fail():
     nothing, or rendered from the README rather than the sweep, the test above would
     pass unconditionally and prove nothing at all."""
     recorded = tables.load()
-    recorded["results"][recorded["write_policy"]][0]["f1"] = 0.5
+    sweep = recorded["sweep"]
+    sweep["results"][sweep["write_policy"]][0]["f1"] = 0.5
     changed = dict(tables.blocks(recorded))["policy-comparison"]
     assert changed not in readme()
 
 
 def test_there_is_a_block_for_every_table_the_readme_marks_as_generated():
-    assert len(tables.blocks(tables.load())) == readme().count(tables.END) == 3
+    assert len(tables.blocks(tables.load())) == readme().count(tables.END) == 4
 
 
 def test_a_rendered_table_is_aligned():
@@ -60,7 +61,7 @@ def test_no_merges_reports_a_dash_rather_than_zero_correct():
     matching: closure over one is the identity function. A 0 there would read as
     evidence for the same claim the number cannot speak to."""
     data = tables.load()
-    wanted = f"| {tables.DISPLAY[data['write_policy']]}"
+    wanted = f"| {tables.DISPLAY[data['sweep']['write_policy']]}"
     table = dict(tables.blocks(data))["closure-cost"]
     row = next(line for line in table.split("\n") if line.startswith(wanted))
     assert row.split("|")[-2].strip() == "-"
@@ -93,3 +94,29 @@ def test_two_candidate_headers_are_refused():
             ["| policy | a |", "| policy | b |"], "demo", "x",
             lambda line: line.startswith("| policy"),
         )
+
+
+def cell_named(table, name):
+    """First column matched exactly. "all features" is a prefix of "all features +
+    volume veto", so startswith would pick the wrong row."""
+    return next(l for l in table.split("\n") if l.split("|")[1].strip() == name)
+
+
+def test_the_ablation_delta_is_measured_before_rounding():
+    data = tables.load()
+    recorded = data["ablation"]
+    reference = recorded["results"][recorded["reference"]]["f1"]
+    shipped = recorded["results"][recorded["shipped"]]["f1"]
+    honest = f"{shipped - reference:+.3f}"
+    naive = f"{round(shipped, 3) - round(reference, 3):+.3f}"
+    assert honest != naive, "this data can no longer tell the two apart"
+    table = dict(tables.blocks(data))["ablation"]
+    row = cell_named(table, tables.FEATURE_SETS[recorded["shipped"]])
+    assert row.split("|")[-2].strip() == honest
+
+
+def test_the_reference_row_carries_no_delta():
+    data = tables.load()
+    table = dict(tables.blocks(data))["ablation"]
+    row = cell_named(table, tables.FEATURE_SETS[data["ablation"]["reference"]])
+    assert row.split("|")[-2].strip() == "-"

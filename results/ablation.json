@@ -1,0 +1,67 @@
+{
+  "k": 5,
+  "order": [
+    "all features",
+    "title similarity only",
+    "everything except price",
+    "everything except category",
+    "cosine alone",
+    "price alone",
+    "all + volume as features",
+    "volume signals alone",
+    "all features + volume veto"
+  ],
+  "reference": "all features",
+  "results": {
+    "all + volume as features": {
+      "f1": 0.9829545454545454,
+      "precision": 0.9719101123595506,
+      "recall": 0.9942528735632183
+    },
+    "all features": {
+      "f1": 0.9774011299435028,
+      "precision": 0.9611111111111111,
+      "recall": 0.9942528735632183
+    },
+    "all features + volume veto": {
+      "f1": 0.9857549857549858,
+      "precision": 0.9774011299435028,
+      "recall": 0.9942528735632183
+    },
+    "cosine alone": {
+      "f1": 0.8753315649867374,
+      "precision": 0.812807881773399,
+      "recall": 0.9482758620689655
+    },
+    "everything except category": {
+      "f1": 0.947075208913649,
+      "precision": 0.918918918918919,
+      "recall": 0.9770114942528736
+    },
+    "everything except price": {
+      "f1": 0.9159891598915989,
+      "precision": 0.8666666666666667,
+      "recall": 0.9712643678160919
+    },
+    "price alone": {
+      "f1": 0.6534653465346535,
+      "precision": 0.4984894259818731,
+      "recall": 0.9482758620689655
+    },
+    "title similarity only": {
+      "f1": 0.889487870619946,
+      "precision": 0.8375634517766497,
+      "recall": 0.9482758620689655
+    },
+    "volume signals alone": {
+      "f1": 0.3115468409586057,
+      "precision": 0.1922043010752688,
+      "recall": 0.8218390804597702
+    }
+  },
+  "seed": 20260826,
+  "shipped": "all features + volume veto",
+  "test_pairs": 1125,
+  "threshold": 0.5,
+  "train_pairs": 2625
+}
