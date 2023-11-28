@@ -765,10 +765,11 @@ left-against-right only. That control is worth more than it sounds: closure's
 damage on this data lands mostly in same-source pairs the matcher never scores.
 
 Also outstanding: IDF weighting of category agreement, a length-aware treatment of
-cosine for the 'Arena'/'Arnea' case, and a test suite for store.py.
-The three sweep tables are now generated from a recorded run and a test fails when
-they drift. Six tables here are not: the blocking, classifier, ablation and two
-Abt-Buy tables are still typed by hand from console output, as are prose figures
-like the fold sizes. That is the same failure mode, still open. It has already cost
-this README twice - four numbers went stale, and three findings that were really
-one split got published as results.
+cosine for the 'Arena'/'Arnea' case.
+Four tables are generated from a recorded run and a test fails when they drift: the
+three sweep tables and the feature ablation. Six are not: blocking recall, the
+classifier comparison, the feature-count comparison and three Abt-Buy tables are
+still typed by hand from console output, as are prose figures like the fold sizes.
+That is the same failure mode, still open. It has already cost this README twice -
+four numbers went stale, and three findings that were really one split got published
+as results.
