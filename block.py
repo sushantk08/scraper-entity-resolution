@@ -12,6 +12,7 @@ They trade off against each other, so the useful output is the trade-off table,
 not a single score.
 """
 
+import json
 from pathlib import Path
 
 import pandas as pd
@@ -21,6 +22,13 @@ from sklearn.neighbors import NearestNeighbors
 import clean
 
 DATA_DIR = Path("data")
+RESULTS = Path("results") / "blocking.json"
+
+# The k the rest of the pipeline blocks at. match.py, ablate.py and
+# sweep.py all use it, so recording it lets a test assert they agree.
+SHIPPED_K = 5
+NEIGHBOURS = (1, 3, 5, 10, 20)
+SHIPPED = f"nearest neighbours k={SHIPPED_K}"
 
 
 def load():
@@ -87,13 +95,19 @@ def main():
     print(f"{'scheme':<26}{'pairs':>10}{'recall':>10}{'reduction':>12}")
 
     schemes = [("exact normalised key", exact_key_pairs(left, right))]
-    for k in (1, 3, 5, 10, 20):
+    for k in NEIGHBOURS:
         schemes.append((f"nearest neighbours k={k}", nearest_neighbour_pairs(left, right, k)))
 
+    recorded = {}
     best = None
     for name, pairs in schemes:
         recall, reduction = score(pairs, truth_pairs, total_possible)
         print(f"{name:<26}{len(pairs):>10,}{recall:>10.3f}{reduction:>12.4%}")
+        recorded[name] = {
+            "pairs": len(pairs),
+            "recall": float(recall),
+            "reduction": float(reduction),
+        }
         if best is None or recall > best[1]:
             best = (pairs, recall, name)
 
@@ -104,6 +118,30 @@ def main():
     left_titles = dict(zip(left["left_id"], left["title"]))
     for left_id, right_id in list(missed)[:5]:
         print(f"  {left_titles[left_id]}\n    vs {right_titles[right_id]}")
+
+    if SHIPPED not in recorded:
+        raise SystemExit(f"{SHIPPED} never measured - {sorted(recorded)}")
+    # No timestamp: an unchanged run must produce an unchanged file, or
+    # the diff stops answering "did any number move?".
+    with open(RESULTS, "w", encoding="utf-8", newline="\n") as handle:
+        json.dump(
+            {
+                "k": SHIPPED_K,
+                "left_records": len(left),
+                "neighbours": list(NEIGHBOURS),
+                "order": [name for name, _ in schemes],
+                "possible_pairs": total_possible,
+                "results": recorded,
+                "right_records": len(right),
+                "shipped": SHIPPED,
+                "true_pairs": len(truth_pairs),
+            },
+            handle,
+            indent=2,
+            sort_keys=True,
+        )
+        handle.write("\n")
+    print(f"\nwrote {RESULTS} - {len(recorded)} schemes")
 
 
 if __name__ == "__main__":

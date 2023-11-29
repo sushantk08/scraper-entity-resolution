@@ -1,0 +1,55 @@
+{
+  "k": 5,
+  "left_records": 850,
+  "neighbours": [
+    1,
+    3,
+    5,
+    10,
+    20
+  ],
+  "order": [
+    "exact normalised key",
+    "nearest neighbours k=1",
+    "nearest neighbours k=3",
+    "nearest neighbours k=5",
+    "nearest neighbours k=10",
+    "nearest neighbours k=20"
+  ],
+  "possible_pairs": 637500,
+  "results": {
+    "exact normalised key": {
+      "pairs": 141,
+      "recall": 0.235,
+      "reduction": 0.9997788235294117
+    },
+    "nearest neighbours k=1": {
+      "pairs": 750,
+      "recall": 0.965,
+      "reduction": 0.9988235294117647
+    },
+    "nearest neighbours k=10": {
+      "pairs": 7500,
+      "recall": 1.0,
+      "reduction": 0.9882352941176471
+    },
+    "nearest neighbours k=20": {
+      "pairs": 15000,
+      "recall": 1.0,
+      "reduction": 0.9764705882352941
+    },
+    "nearest neighbours k=3": {
+      "pairs": 2250,
+      "recall": 0.995,
+      "reduction": 0.9964705882352941
+    },
+    "nearest neighbours k=5": {
+      "pairs": 3750,
+      "recall": 1.0,
+      "reduction": 0.9941176470588236
+    }
+  },
+  "right_records": 750,
+  "shipped": "nearest neighbours k=5",
+  "true_pairs": 600
+}

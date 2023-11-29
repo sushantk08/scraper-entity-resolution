@@ -1,7 +1,7 @@
-"""The drift test. Fails when README.md's sweep tables disagree with tables.py.
+"""The drift test. Fails when README.md's generated tables disagree with tables.py.
 
 WHAT THIS DOES NOT DO: re-run the sweep. It compares the committed README against
-results/sweep.json, so it catches a hand-edited table, a stale table, and a regenerated
+the runs recorded under results/, so it catches a hand-edited table, a stale table, and a regenerated
 sweep whose README was never updated. It cannot catch a wrong sweep - test_resolve.py
 and test_decide.py cover the code that produced those numbers.
 
@@ -45,7 +45,7 @@ def test_the_drift_test_can_actually_fail():
 
 
 def test_there_is_a_block_for_every_table_the_readme_marks_as_generated():
-    assert len(tables.blocks(tables.load())) == readme().count(tables.END) == 4
+    assert len(tables.blocks(tables.load())) == readme().count(tables.END) == 5
 
 
 def test_a_rendered_table_is_aligned():
@@ -120,3 +120,31 @@ def test_the_reference_row_carries_no_delta():
     table = dict(tables.blocks(data))["ablation"]
     row = cell_named(table, tables.FEATURE_SETS[data["ablation"]["reference"]])
     assert row.split("|")[-2].strip() == "-"
+
+
+def test_every_scheme_block_py_measures_reaches_the_readme():
+    """The hand-typed table showed four of the six schemes. Omitting a row is
+    the same failure as mistyping one, and it is the failure this table was
+    generated to fix, so the row count is pinned to what block.py recorded."""
+    data = tables.load()
+    table = dict(tables.blocks(data))["blocking"]
+    rows = [l for l in table.split("\n") if l.startswith("|") and "---" not in l]
+    assert len(rows) == len(data["blocking"]["order"]) + 1
+
+
+def test_the_bold_recall_is_the_shipped_k_not_the_best_one():
+    """Three schemes tie at 1.000, so bolding the maximum would be arbitrary and
+    would move on its own if a larger k ever won. The bold marks what ships."""
+    data = tables.load()
+    table = dict(tables.blocks(data))["blocking"]
+    bold = [l for l in table.split("\n") if "**" in l]
+    assert len(bold) == 1
+    assert bold[0].split("|")[1].strip() == tables.SCHEMES[data["blocking"]["shipped"]]
+
+
+def test_the_recorded_runs_agree_on_the_blocking_k():
+    """block.py and ablate.py each choose k independently. If one of them moves,
+    the README's tables quietly stop describing the same pipeline."""
+    runs = {n: r["k"] for n, r in tables.load().items() if "k" in r}
+    assert len(runs) >= 2, f"only {sorted(runs)} declare a k"
+    assert len(set(runs.values())) == 1, runs

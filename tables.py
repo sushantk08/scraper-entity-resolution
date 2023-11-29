@@ -26,10 +26,22 @@ import sys
 
 RESULTS = os.path.join("results", "sweep.json")
 ABLATION = os.path.join("results", "ablation.json")
+BLOCKING = os.path.join("results", "blocking.json")
 README = "README.md"
 
 # Only "cosine alone" actually differs, but all nine are listed so that a new feature
 # group cannot reach the README under its internal name by defaulting to itself.
+# All six listed, not just the four the hand-typed table showed, so a scheme
+# cannot reach the README under block.py's internal name.
+SCHEMES = {
+    "exact normalised key": "exact key match",
+    "nearest neighbours k=1": "k = 1",
+    "nearest neighbours k=3": "k = 3",
+    "nearest neighbours k=5": "k = 5",
+    "nearest neighbours k=10": "k = 10",
+    "nearest neighbours k=20": "k = 20",
+}
+
 FEATURE_SETS = {
     "all features": "all features",
     "all features + volume veto": "all features + volume veto",
@@ -58,16 +70,27 @@ def load_sweep():
     return data
 
 
+def read_run(path, names, label):
+    """One recorded run, with every group name checked against the README's
+    vocabulary. A builder emitting an internal name would fail its own drift
+    test forever, so refuse at load time and name the map to add it to.
+    """
+    with io.open(path, encoding="utf-8") as handle:
+        data = json.load(handle)
+    missing = set(data["order"]) - set(names)
+    if missing:
+        sys.exit(f"no README name for {sorted(missing)} - add it to {label}")
+    return data
+
+
 def load():
     """Every recorded run the README needs, keyed by source. Each BLOCKS entry names
     the one it reads, so a builder cannot quietly render from the wrong file."""
-    data = {"sweep": load_sweep()}
-    with io.open(ABLATION, encoding="utf-8") as handle:
-        data["ablation"] = json.load(handle)
-    missing = set(data["ablation"]["order"]) - set(FEATURE_SETS)
-    if missing:
-        sys.exit(f"no README name for {sorted(missing)} - add it to FEATURE_SETS")
-    return data
+    return {
+        "sweep": load_sweep(),
+        "ablation": read_run(ABLATION, FEATURE_SETS, "FEATURE_SETS"),
+        "blocking": read_run(BLOCKING, SCHEMES, "SCHEMES"),
+    }
 
 
 def values(data, name, key):
@@ -161,6 +184,22 @@ def closure_cost(data):
 
 # Located by marker once the markers exist. Before that, by a predicate on the header
 # row - two of these tables start with "| policy", so the first column is not enough.
+def blocking(data):
+    """Every scheme block.py measures, including the two the hand-typed table
+    left out. Recall is monotonic in k - the k=5 neighbour set is a subset of
+    the k=20 one - so those two must also read 1.000, and printing them is what
+    makes k=5 the smallest sufficient k rather than merely a sufficient one.
+    """
+    rows = []
+    for name in data["order"]:
+        recall = f"{data['results'][name]['recall']:.3f}"
+        # The shipped k is bold, not the best recall: three schemes tie at 1.000.
+        if name == data["shipped"]:
+            recall = f"**{recall}**"
+        rows.append([SCHEMES[name], recall])
+    return render(["method", "recall of true pairs"], rows)
+
+
 def ablation(data):
     """Ordered by F1 descending, which is the README's order and not GROUPS' order.
 
@@ -179,6 +218,10 @@ def ablation(data):
 
 
 BLOCKS = [
+    ("blocking", "blocking", blocking,
+     # The Abt-Buy blocking table also starts "| method"; its second column
+     # is "recall", not "recall of true pairs".
+     lambda line: line.startswith("| method") and "recall of true" in line),
     ("ablation", "ablation", ablation,
      # Two README tables have a "| feature set" header - the other is the Abt-Buy
      # ablation at ~line 573, whose columns are "pair F1" / "beats all".
