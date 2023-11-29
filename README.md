@@ -770,8 +770,8 @@ damage on this data lands mostly in same-source pairs the matcher never scores.
 
 Also outstanding: IDF weighting of category agreement, a length-aware treatment of
 cosine for the 'Arena'/'Arnea' case.
-Four tables are generated from a recorded run and a test fails when they drift: the
-three sweep tables and the feature ablation. Six are not: blocking recall, the
+Five tables are generated from a recorded run and a test fails when they drift: the
+three sweep tables, the feature ablation and blocking recall. Five are not - the
 classifier comparison, the feature-count comparison and three Abt-Buy tables are
 still typed by hand from console output, as are prose figures like the fold sizes.
 That is the same failure mode, still open. It has already cost this README twice -

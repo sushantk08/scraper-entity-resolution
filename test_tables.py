@@ -148,3 +148,15 @@ def test_the_recorded_runs_agree_on_the_blocking_k():
     runs = {n: r["k"] for n, r in tables.load().items() if "k" in r}
     assert len(runs) >= 2, f"only {sorted(runs)} declare a k"
     assert len(set(runs.values())) == 1, runs
+
+
+NUMBERS = {2: "Two", 3: "Three", 4: "Four", 5: "Five", 6: "Six", 7: "Seven"}
+
+
+def test_the_readme_states_how_many_of_its_tables_are_generated():
+    """That paragraph is the README's own claim about how much of itself is
+    checked, and it has already been wrong once - it said six hand-typed tables
+    and then listed five. Generating another table must break this test rather
+    than quietly leaving a smaller number in print."""
+    wanted = f"{NUMBERS[len(tables.BLOCKS)]} tables are generated"
+    assert wanted in readme(), wanted
