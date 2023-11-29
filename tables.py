@@ -27,6 +27,7 @@ import sys
 RESULTS = os.path.join("results", "sweep.json")
 ABLATION = os.path.join("results", "ablation.json")
 BLOCKING = os.path.join("results", "blocking.json")
+VOLUME = os.path.join("results", "volume.json")
 README = "README.md"
 
 # Only "cosine alone" actually differs, but all nine are listed so that a new feature
@@ -41,6 +42,15 @@ SCHEMES = {
     "nearest neighbours k=10": "k = 10",
     "nearest neighbours k=20": "k = 20",
 }
+
+# A tuple, not a rename map: the README uses volume_feature.py's own labels.
+# It exists so a fifth configuration cannot reach the README unnoticed.
+CONFIGURATIONS = (
+    "6 features",
+    "6 features + volume veto",
+    "9 features (volume learned)",
+    "9 features + veto",
+)
 
 FEATURE_SETS = {
     "all features": "all features",
@@ -90,6 +100,7 @@ def load():
         "sweep": load_sweep(),
         "ablation": read_run(ABLATION, FEATURE_SETS, "FEATURE_SETS"),
         "blocking": read_run(BLOCKING, SCHEMES, "SCHEMES"),
+        "volume": read_run(VOLUME, CONFIGURATIONS, "CONFIGURATIONS"),
     }
 
 
@@ -184,6 +195,29 @@ def closure_cost(data):
 
 # Located by marker once the markers exist. Before that, by a predicate on the header
 # row - two of these tables start with "| policy", so the first column is not enough.
+def volume(data):
+    """Only the policy the README tabulates. The other one the script measures is
+    reported in the prose below the table instead - four identical rows are not a
+    table - and a test checks that sentence against this same recorded run.
+    """
+    rows = []
+    for name in data["order"]:
+        run = data["policies"][data["tabulated"]][name]
+        f1 = f"{run['f1']:.3f}"
+        if name == data["shipped"]:
+            f1 = f"**{f1}**"
+        rows.append([
+            name,
+            f"{run['precision']:.3f}",
+            f"{run['recall']:.3f}",
+            f1,
+            str(run["false_positives"]),
+        ])
+    return render(
+        ["configuration", "precision", "recall", "F1", "false positives"], rows
+    )
+
+
 def blocking(data):
     """Every scheme block.py measures, including the two the hand-typed table
     left out. Recall is monotonic in k - the k=5 neighbour set is a subset of
@@ -232,6 +266,10 @@ BLOCKS = [
      lambda line: "head-to-head vs" in line),
     ("closure-cost", "sweep", closure_cost,
      lambda line: line.startswith("| policy") and "closure merges" in line),
+    ("volume-comparison", "volume", volume,
+     # The Abt-Buy classifier table also starts "| configuration"; its last
+     # column is "end-to-end recall".
+     lambda line: line.startswith("| configuration") and "false pos" in line),
 ]
 
 END = "<!-- end -->"

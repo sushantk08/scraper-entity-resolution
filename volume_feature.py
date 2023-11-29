@@ -27,6 +27,7 @@ on the train fold, and we already know that does not transfer — tuner noise wo
 be larger than the effect we are trying to see.
 """
 
+import json
 from math import comb
 
 import numpy as np
@@ -40,6 +41,12 @@ VOLUME = ["volume_conflict", "volume_match", "volume_one_sided"]
 BASE = [feature for feature in match.FEATURES if feature not in VOLUME]
 LEARNED = BASE + VOLUME
 THRESHOLD = 0.5
+RESULTS = "results/volume.json"
+SHIPPED = "6 features + volume veto"
+# The policy the README tabulates, and the one its prose discusses instead.
+# Named so that a rename in the loop below cannot orphan the recording.
+TABULATED = "threshold 0.5 only"
+PAIRED = "one-to-one at 0.5"
 
 
 def fit(train, features):
@@ -125,6 +132,7 @@ def main():
     print(f"volume conflicts in test: {int(conflicts.sum())} pairs, "
           f"{int(test.loc[conflicts, 'is_match'].sum())} of them true\n")
 
+    recorded = {}
     base_scorer = fit(train, BASE)
     learned_scorer = fit(train, LEARNED)
     base_scores = base_scorer(test)
@@ -141,10 +149,18 @@ def main():
     for policy_name, policy in (("threshold 0.5 only", threshold_only),
                                 ("one-to-one at 0.5", one_to_one)):
         print(f"{policy_name}\n{header}")
+        recorded[policy_name] = {}
         for name, scores in configurations.items():
             keep = policy(test, scores, THRESHOLD)
             precision, recall, f1, fp, fn = measure(y_test, keep)
             print(f"{name:<30}{precision:>7.3f}{recall:>7.3f}{f1:>7.3f}{fp:>5}{fn:>4}")
+            recorded[policy_name][name] = {
+                "precision": precision,
+                "recall": recall,
+                "f1": f1,
+                "false_positives": fp,
+                "false_negatives": fn,
+            }
         print()
 
     # Only the decisions that differ carry information about which is better.
@@ -152,6 +168,7 @@ def main():
     baseline_keep = one_to_one(test, base_scores, THRESHOLD)
     baseline_fp, baseline_fn = wrong_pairs(test, y_test, baseline_keep)
     baseline_errors = baseline_fp | baseline_fn
+    changes = {}
 
     for name in ("6 features + volume veto", "9 features (volume learned)",
                  "9 features + veto"):
@@ -162,12 +179,50 @@ def main():
         broken = len(errors - baseline_errors)
         print(f"  {name:<30} fixed {fixed}, broke {broken}   "
               f"(coin-flip p = {coin_flip_p(fixed, broken):.2f})")
+        changes[name] = {
+            "fixed": fixed,
+            "broken": broken,
+            "p": coin_flip_p(fixed, broken),
+        }
 
     print("\nHow to read this: a high p means the two configurations disagree on so")
     print("few pairs that chance alone explains the split, and the F1 difference is")
     print("not evidence. In that case choose on grounds you can defend out loud —")
     print("fewer moving parts, or errors that are easier to explain — and say")
     print("plainly that the metric did not decide it.")
+
+    for key in (TABULATED, PAIRED):
+        if key not in recorded:
+            raise SystemExit(f"{key} not measured - {sorted(recorded)}")
+    if SHIPPED not in recorded[TABULATED]:
+        raise SystemExit(f"{SHIPPED} not measured under {TABULATED}")
+    all_conflicts = table["volume_conflict"] == 1.0
+    conflicts_true = int(table.loc[all_conflicts, "is_match"].sum())
+    # No timestamp: an unchanged run must produce an unchanged file, or the
+    # diff stops answering "did any number move?".
+    with open(RESULTS, "w", encoding="utf-8", newline="\n") as handle:
+        json.dump(
+            {
+                "candidate_pairs": len(table),
+                "changes": changes,
+                "conflicts": int(all_conflicts.sum()),
+                "conflicts_true": conflicts_true,
+                "k": match.K,
+                "order": list(configurations),
+                "paired": PAIRED,
+                "policies": recorded,
+                "shipped": SHIPPED,
+                "tabulated": TABULATED,
+                "test_pairs": len(test),
+                "test_true": int(y_test.sum()),
+                "threshold": THRESHOLD,
+            },
+            handle,
+            indent=2,
+            sort_keys=True,
+        )
+        handle.write("\n")
+    print(f"\nwrote {RESULTS} - {len(recorded)} policies")
 
 
 if __name__ == "__main__":
