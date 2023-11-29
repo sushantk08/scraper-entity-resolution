@@ -54,7 +54,7 @@ def test_the_drift_test_can_actually_fail():
 
 
 def test_there_is_a_block_for_every_table_the_readme_marks_as_generated():
-    assert len(tables.blocks(tables.load())) == readme().count(tables.END) == 6
+    assert len(tables.blocks(tables.load())) == readme().count(tables.END) == 7
 
 
 def test_a_rendered_table_is_aligned():
@@ -194,6 +194,45 @@ def test_the_volume_conflict_figures_in_the_prose_are_the_recorded_ones():
     assert wanted in prose(), wanted
 
 
+def test_every_generated_table_renders_every_row_its_run_recorded():
+    """Silently dropping a row reads as coverage while hiding the same defect as
+    mistyping one, and both hand-typed blocking tables did it. Every builder
+    that iterates a run's "order" must render all of it, so a table added later
+    is covered by this without anyone remembering to write a test.
+    """
+    data = tables.load()
+    rendered = dict(tables.blocks(data))
+    checked = 0
+    for name, source, _, _ in tables.BLOCKS:
+        if source == "sweep":
+            continue
+        rows = [l for l in rendered[name].split("\n")
+                if l.startswith("|") and "---" not in l]
+        assert len(rows) == len(data[source]["order"]) + 1, name
+        checked += 1
+    assert checked >= 4, checked
+def test_the_abt_buy_neighbour_counts_are_exactly_k_per_right_record():
+    """Every row keeps right_records x k pairs - 1,092 x 20 = 21,840 - so no Buy
+    record ever loses a neighbour to a collision. If blocking started returning
+    fewer, recall would fall and the table would still look entirely plausible.
+    """
+    data = tables.load()["abt_blocking"]
+    for k in data["neighbours"]:
+        run = data["results"][f"k = {k}"]
+        assert run["pairs"] == data["right_records"] * k, (k, run["pairs"])
+def test_recall_does_not_fall_as_k_grows_in_either_corpus():
+    """The k+1 neighbour set contains the k one, so recall cannot decrease. It is
+    what makes a blocking table readable as a curve, and checking the shape of
+    both recorded runs beats checking numbers I typed from either of them.
+    """
+    data = tables.load()
+    for source, template in (("blocking", "nearest neighbours k={}"),
+                             ("abt_blocking", "k = {}")):
+        run = data[source]
+        recalls = [run["results"][template.format(k)]["recall"]
+                   for k in run["neighbours"]]
+        assert recalls == sorted(recalls), (source, recalls)
+        assert len(recalls) >= 5, source
 def test_the_two_scripts_that_fit_the_same_model_agree_in_print():
     """ablate.py and volume_feature.py fit the same model on the same split and
     each publish an F1 for it. They agree to three decimals but NOT bit for bit -

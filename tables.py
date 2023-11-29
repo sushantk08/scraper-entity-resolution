@@ -28,6 +28,7 @@ RESULTS = os.path.join("results", "sweep.json")
 ABLATION = os.path.join("results", "ablation.json")
 BLOCKING = os.path.join("results", "blocking.json")
 VOLUME = os.path.join("results", "volume.json")
+ABT_BLOCKING = os.path.join("results", "abt_blocking.json")
 README = "README.md"
 
 # Only "cosine alone" actually differs, but all nine are listed so that a new feature
@@ -50,6 +51,18 @@ CONFIGURATIONS = (
     "6 features + volume veto",
     "9 features (volume learned)",
     "9 features + veto",
+)
+# A tuple, not a rename map: abt_buy.py already prints the README's labels. It
+# exists so a scheme cannot reach the README unnoticed - the hand-typed table
+# showed six of the seven that script measures.
+ABT_SCHEMES = (
+    "exact key match",
+    "k = 1",
+    "k = 3",
+    "k = 5",
+    "k = 6",
+    "k = 10",
+    "k = 20",
 )
 
 FEATURE_SETS = {
@@ -101,6 +114,7 @@ def load():
         "ablation": read_run(ABLATION, FEATURE_SETS, "FEATURE_SETS"),
         "blocking": read_run(BLOCKING, SCHEMES, "SCHEMES"),
         "volume": read_run(VOLUME, CONFIGURATIONS, "CONFIGURATIONS"),
+        "abt_blocking": read_run(ABT_BLOCKING, ABT_SCHEMES, "ABT_SCHEMES"),
     }
 
 
@@ -218,6 +232,23 @@ def volume(data):
     )
 
 
+def abt_blocking(data):
+    """Every scheme abt_buy.py measures. The hand-typed table omitted k = 3,
+    which is where recall is still climbing steeply - 0.888, 0.958, 0.977 - so
+    leaving it out flattened the curve the table exists to show. Nothing is
+    bold, as in the hand-typed original: this table is the evidence for
+    choosing a k, not the record of which one ships.
+    """
+    rows = []
+    for name in data["order"]:
+        run = data["results"][name]
+        rows.append([
+            name,
+            f"{run['recall']:.3f}",
+            f"{run['pairs']:,}",
+            f"{run['share']:.2%}",
+        ])
+    return render(["method", "recall", "pairs kept", "% of search space"], rows)
 def blocking(data):
     """Every scheme block.py measures, including the two the hand-typed table
     left out. Recall is monotonic in k - the k=5 neighbour set is a subset of
@@ -270,6 +301,9 @@ BLOCKS = [
      # The Abt-Buy classifier table also starts "| configuration"; its last
      # column is "end-to-end recall".
      lambda line: line.startswith("| configuration") and "false pos" in line),
+    ("abt-blocking", "abt_blocking", abt_blocking,
+     # The books blocking table also starts "| method" and has no pairs column.
+     lambda line: line.startswith("| method") and "pairs kept" in line),
 ]
 
 END = "<!-- end -->"

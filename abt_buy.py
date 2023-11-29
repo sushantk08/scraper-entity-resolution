@@ -23,6 +23,7 @@ budget it never won, because two variants of the same string are not diverse
 enough to be worth two passes.
 """
 
+import json
 import re
 
 import pandas as pd
@@ -33,6 +34,9 @@ from inspect_pairs import read_any
 ABT = "benchmark/Abt.csv"
 BUY = "benchmark/Buy.csv"
 MAPPING = "benchmark/abt_buy_perfectMapping.csv"
+RESULTS = "results/abt_blocking.json"
+# Every k the table reports, k=3 included - the hand-typed version skipped it.
+NEIGHBOURS = (1, 3, 5, 6, 10, 20)
 
 
 def normalise(text):
@@ -114,19 +118,42 @@ def main():
 
     ceiling = len(set(truth["right_id"])) / len(truth_pairs)
     print(f"\nrecall ceiling for a one-partner-per-right-record rule: {ceiling:.3f}")
-    print("  (5 right records genuinely have two true partners here)")
+    partners = {}
+    for _, right_id in truth_pairs:
+        partners[right_id] = partners.get(right_id, 0) + 1
+    # Derived, not typed: this line used to read "(5 right records ...)" as a
+    # string literal, which is the same defect as a hand-typed table cell.
+    # If the pairs are ordered (right, left) instead, the ceiling disagrees.
+    if abs(len(partners) / len(truth_pairs) - ceiling) > 1e-9:
+        raise SystemExit(f"{len(partners)} distinct vs ceiling {ceiling}")
+    shared = sum(1 for n in partners.values() if n > 1)
+    most = max(partners.values())
+    print(f"  ({shared} right records have more than one true partner here, "
+          f"the most being {most})")
 
     exact = block.exact_key_pairs(left, right)
     print(f"\nblocking key = squash (chosen by measurement, see module docstring)")
     print(f"{'method':<22}{'recall':>9}{'pairs kept':>13}{'% of space':>12}")
     print(f"{'exact key match':<22}{len(exact & truth_pairs) / len(truth_pairs):>9.3f}"
           f"{len(exact):>13,}{len(exact) / total_possible:>11.2%}")
+    recorded = {
+        "exact key match": {
+            "recall": len(exact & truth_pairs) / len(truth_pairs),
+            "pairs": len(exact),
+            "share": len(exact) / total_possible,
+        }
+    }
 
-    for k in (1, 3, 5, 6, 10, 20):
+    for k in NEIGHBOURS:
         pairs = block.nearest_neighbour_pairs(left, right, k)
         recall = len(pairs & truth_pairs) / len(truth_pairs)
         print(f"{'k = ' + str(k):<22}{recall:>9.3f}{len(pairs):>13,}"
               f"{len(pairs) / total_possible:>11.2%}")
+        recorded[f"k = {k}"] = {
+            "recall": recall,
+            "pairs": len(pairs),
+            "share": len(pairs) / total_possible,
+        }
 
     missed = sorted(truth_pairs - block.nearest_neighbour_pairs(left, right, 10))
     print(f"\n{len(missed)} true pairs unreachable at k=10. The remaining ceiling is")
@@ -136,6 +163,33 @@ def main():
     for left_id, right_id in missed[:6]:
         print(f"\n  left  {left_names.get(left_id, '?')!r}")
         print(f"  right {right_names.get(right_id, '?')!r}")
+    expected = len(NEIGHBOURS) + 1
+    if len(recorded) != expected:
+        raise SystemExit(f"recorded {len(recorded)}, expected {expected}")
+    # No "k" key by design: the k-agreement test compares every run that
+    # declares one, and Abt-Buy is a different corpus whose k has no reason
+    # to match the books pipeline's.
+    with open(RESULTS, "w", encoding="utf-8", newline="\n") as handle:
+        json.dump(
+            {
+                "left_records": len(left),
+                "most_partners": most,
+                "neighbours": list(NEIGHBOURS),
+                "order": list(recorded),
+                "possible_pairs": total_possible,
+                "recall_ceiling": ceiling,
+                "results": recorded,
+                "right_records": len(right),
+                "rights_with_several_partners": shared,
+                "true_pairs": len(truth_pairs),
+                "unreachable_at_k10": len(missed),
+            },
+            handle,
+            indent=2,
+            sort_keys=True,
+        )
+        handle.write("\n")
+    print(f"wrote {RESULTS} - {len(recorded)} schemes")
 
 
 if __name__ == "__main__":
