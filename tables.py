@@ -29,6 +29,18 @@ ABLATION = os.path.join("results", "ablation.json")
 BLOCKING = os.path.join("results", "blocking.json")
 VOLUME = os.path.join("results", "volume.json")
 ABT_BLOCKING = os.path.join("results", "abt_blocking.json")
+ABT_CLASSIFIER = os.path.join("results", "abt_classifier.json")
+# Row names as match_abt_buy.py records them. The baseline's README label
+# carries the tuned threshold, so it is built from the recorded number rather
+# than listed here - typing "0.497" into this file would reintroduce exactly
+# the defect the whole module exists to remove.
+ABT_BASELINE = "cosine baseline"
+ABT_ROWS = (
+    ABT_BASELINE,
+    "classifier at 0.5",
+    "best per right record",
+    "mutual best",
+)
 README = "README.md"
 
 # Only "cosine alone" actually differs, but all nine are listed so that a new feature
@@ -115,6 +127,7 @@ def load():
         "blocking": read_run(BLOCKING, SCHEMES, "SCHEMES"),
         "volume": read_run(VOLUME, CONFIGURATIONS, "CONFIGURATIONS"),
         "abt_blocking": read_run(ABT_BLOCKING, ABT_SCHEMES, "ABT_SCHEMES"),
+        "abt_classifier": read_run(ABT_CLASSIFIER, ABT_ROWS, "ABT_ROWS"),
     }
 
 
@@ -232,6 +245,53 @@ def volume(data):
     )
 
 
+def abt_classifier(data):
+    """The Abt-Buy classifier table. Two cells are bold and, unlike the
+    blocking table, they ARE column maxima - best F1 and best end-to-end
+    recall. That is deliberate: the paragraph under the table exists because
+    the two maxima sit in DIFFERENT rows, which is the finding. So this
+    builder refuses to render if one row ever wins both, since a silent
+    re-render would then publish a table contradicting its own prose. It also
+    refuses on a tie, where the choice of which cell to embolden would be
+    arbitrary and would migrate on its own.
+    """
+    rows = []
+    for name in data["order"]:
+        run = data["results"][name]
+        if name == ABT_BASELINE:
+            label = f"baseline: cosine >= {data['cosine_threshold']:.3f}"
+        else:
+            label = DISPLAY.get(name, name)
+        rows.append(
+            [label, run["precision"], run["recall"], run["f1"], run["end_to_end"]]
+        )
+    best_f1 = max(row[3] for row in rows)
+    best_end = max(row[4] for row in rows)
+    if sum(1 for row in rows if row[3] == best_f1) != 1:
+        raise SystemExit(f"F1 ties at {best_f1:.6f} - bolding one is arbitrary")
+    if sum(1 for row in rows if row[4] == best_end) != 1:
+        raise SystemExit(f"end-to-end ties at {best_end:.6f}")
+    f1_row = [row[3] for row in rows].index(best_f1)
+    end_row = [row[4] for row in rows].index(best_end)
+    if f1_row == end_row:
+        raise SystemExit(
+            f"{rows[f1_row][0]} now wins both F1 and end-to-end recall, so the "
+            "README's 'opposite orders' paragraph is no longer true - rewrite "
+            "the prose before regenerating this table"
+        )
+    out = []
+    for index, row in enumerate(rows):
+        f1, end = f"{row[3]:.3f}", f"{row[4]:.3f}"
+        out.append([
+            row[0],
+            f"{row[1]:.3f}",
+            f"{row[2]:.3f}",
+            f"**{f1}**" if index == f1_row else f1,
+            f"**{end}**" if index == end_row else end,
+        ])
+    return render(
+        ["configuration", "precision", "recall", "F1", "end-to-end recall"], out
+    )
 def abt_blocking(data):
     """Every scheme abt_buy.py measures. The hand-typed table omitted k = 3,
     which is where recall is still climbing steeply - 0.888, 0.958, 0.977 - so
@@ -304,6 +364,10 @@ BLOCKS = [
     ("abt-blocking", "abt_blocking", abt_blocking,
      # The books blocking table also starts "| method" and has no pairs column.
      lambda line: line.startswith("| method") and "pairs kept" in line),
+    ("abt-classifier", "abt_classifier", abt_classifier,
+     # The volume table also starts "| configuration"; this is the only one
+     # reporting end-to-end recall.
+     lambda line: line.startswith("| configuration") and "end-to-end" in line),
 ]
 
 END = "<!-- end -->"

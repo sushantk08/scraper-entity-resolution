@@ -54,7 +54,7 @@ def test_the_drift_test_can_actually_fail():
 
 
 def test_there_is_a_block_for_every_table_the_readme_marks_as_generated():
-    assert len(tables.blocks(tables.load())) == readme().count(tables.END) == 7
+    assert len(tables.blocks(tables.load())) == readme().count(tables.END) == 8
 
 
 def test_a_rendered_table_is_aligned():
@@ -159,7 +159,8 @@ def test_the_recorded_runs_agree_on_the_blocking_k():
     assert len(set(runs.values())) == 1, runs
 
 
-NUMBERS = {2: "Two", 3: "Three", 4: "Four", 5: "Five", 6: "Six", 7: "Seven"}
+NUMBERS = {2: "Two", 3: "Three", 4: "Four", 5: "Five", 6: "Six", 7: "Seven",
+           8: "Eight", 9: "Nine", 10: "Ten", 11: "Eleven"}
 
 
 def test_the_readme_states_how_many_of_its_tables_are_generated():
@@ -286,3 +287,47 @@ def test_the_two_scripts_that_fit_the_same_model_agree_in_print():
         mine, theirs = ablation[there]["f1"], tabulated[here]["f1"]
         assert f"{mine:.3f}" == f"{theirs:.3f}", (there, here, mine, theirs)
         assert abs(mine - theirs) < 1e-9, (there, here, mine, theirs)
+
+def test_both_abt_buy_scripts_measure_the_same_blocking_recall():
+    """abt_buy.py sweeps k through one block.py entry point; match_abt_buy.py
+    builds its candidate table through another, at k = 10. Two code paths,
+    one quantity - if they ever disagree, one of them is not blocking the way
+    the README says. Compared as printed plus a tolerance, never with ==:
+    ablate.py and volume_feature.py already differ in the last digit.
+    """
+    data = tables.load()
+    blocking, classifier = data["abt_blocking"], data["abt_classifier"]
+    swept = blocking["results"]["k = %d" % classifier["blocking_k"]]
+    assert f"{swept['recall']:.3f}" == f"{classifier['blocking_recall']:.3f}"
+    assert abs(swept["recall"] - classifier["blocking_recall"]) < 1e-9
+    assert swept["pairs"] == classifier["candidate_pairs"]
+def test_the_two_abt_buy_scripts_agree_on_the_recall_ceiling():
+    """Both derive it from truth_pairs independently, and both used to print
+    it as a typed literal. The key names differ between the two recordings
+    (rights_ / right_), which is why this bridge is written down.
+    """
+    data = tables.load()
+    blocking, classifier = data["abt_blocking"], data["abt_classifier"]
+    assert (blocking["rights_with_several_partners"]
+            == classifier["right_with_several_partners"])
+    assert (f"{blocking['recall_ceiling']:.3f}"
+            == f"{classifier['recall_ceiling']:.3f}")
+    assert abs(blocking["recall_ceiling"] - classifier["recall_ceiling"]) < 1e-9
+def test_the_abt_buy_test_fold_figures_in_the_prose_are_the_recorded_ones():
+    """Four numbers in the sentence above the table, all of which were typed."""
+    run = tables.load()["abt_classifier"]
+    text = prose()
+    assert f"Test fold: {run['test_pairs']:,} candidate pairs" in text
+    assert f"{run['test_true']} true pairs reached the matcher" in text
+    assert f"{run['truth_in_test']} exist in the fold" in text
+    assert f"already lost {run['blocking_lost']} before scoring" in text
+def test_exactly_two_cells_are_bold_in_the_abt_buy_classifier_table():
+    """The paragraph under this table turns on the two maxima sitting in
+    different rows; tables.abt_classifier refuses to render otherwise. This
+    checks the rendered table really shows two bold cells in two rows, so the
+    refusal cannot quietly become unreachable.
+    """
+    rendered = tables.abt_classifier(tables.load()["abt_classifier"])
+    bold = [line for line in rendered.split("\n") if "**" in line]
+    assert len(bold) == 2, rendered
+    assert sum(line.count("**") for line in bold) == 4, rendered

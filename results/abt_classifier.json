@@ -1,0 +1,70 @@
+{
+  "blocking_k": 10,
+  "blocking_lost": 6,
+  "blocking_recall": 0.9881494986326345,
+  "candidate_pairs": 10920,
+  "candidates_true": 1084,
+  "comparable": "classifier at 0.5",
+  "cosine_threshold": 0.49683287809257987,
+  "description_known": {
+    "description on both sides": {
+      "pairs": 1990,
+      "true_rate": 0.09798994974874371
+    },
+    "one side blank": {
+      "pairs": 1290,
+      "true_rate": 0.09844961240310078
+    }
+  },
+  "left_records": 1081,
+  "left_with_several_partners": 16,
+  "order": [
+    "cosine baseline",
+    "classifier at 0.5",
+    "best per right record",
+    "mutual best"
+  ],
+  "recall_ceiling": 0.9954421148587056,
+  "results": {
+    "best per right record": {
+      "end_to_end": 0.8689024390243902,
+      "f1": 0.9062003179650238,
+      "false_negatives": 37,
+      "false_positives": 22,
+      "precision": 0.9283387622149837,
+      "recall": 0.8850931677018633
+    },
+    "classifier at 0.5": {
+      "end_to_end": 0.9115853658536586,
+      "f1": 0.7018779342723004,
+      "false_negatives": 23,
+      "false_positives": 231,
+      "precision": 0.5641509433962264,
+      "recall": 0.9285714285714286
+    },
+    "cosine baseline": {
+      "end_to_end": 0.7560975609756098,
+      "f1": 0.6604527296937416,
+      "false_negatives": 74,
+      "false_positives": 181,
+      "precision": 0.578088578088578,
+      "recall": 0.7701863354037267
+    },
+    "mutual best": {
+      "end_to_end": 0.8567073170731707,
+      "f1": 0.9153094462540716,
+      "false_negatives": 41,
+      "false_positives": 11,
+      "precision": 0.9623287671232876,
+      "recall": 0.8726708074534162
+    }
+  },
+  "right_records": 1092,
+  "right_with_several_partners": 5,
+  "test_pairs": 3280,
+  "test_true": 322,
+  "threshold": 0.5,
+  "train_pairs": 7640,
+  "true_pairs": 1097,
+  "truth_in_test": 328
+}

@@ -4,7 +4,8 @@
 
 Everything in match.py is measured on data perturb.py generated, which writes both
 the noise and the labels. This file is the check on that: real product names from
-two retailers, human-labelled pairs, and a positive rate of 0.093% against 16%.
+two retailers, human-labelled pairs, and the same positive rate as the generated
+benchmark - 0.093% against 0.094%, so the difficulty is not sparsity.
 
 It deliberately does NOT reuse match.pair_features. abt_buy.py blocks on a
 SQUASHED key with separators deleted ('CLI-8C' -> 'cli8c'), so character
@@ -38,6 +39,7 @@ their fill values are 0.477 and 0.582, nowhere near as safe, and neither was
 tested.
 """
 
+import json
 import re
 
 import numpy as np
@@ -53,6 +55,14 @@ import match
 
 K = 10
 THRESHOLD = 0.5
+RESULTS = "results/abt_classifier.json"
+# Row names, so a rename cannot orphan the recording. The recorded run says
+# "blocking_k", never "k": the k-agreement test compares every run declaring a
+# "k" and this corpus has its own, unrelated to the books pipeline's.
+BASELINE = "cosine baseline"
+COMPARABLE = "classifier at 0.5"
+ONE_TO_ONE = ("best per right record", "mutual best")
+RECORDED = {}
 
 TEXT = ["cosine", "sequence_ratio", "length_ratio", "word_jaccard"]
 FEATURES = TEXT + [
@@ -191,11 +201,20 @@ def metrics(y_true, keep):
     return precision, recall, f1, false_positive, false_negative
 
 
-def show(name, y_true, keep, end_to_end=None):
+def show(name, y_true, keep, end_to_end=None, record=None):
     precision, recall, f1, fp, fn = metrics(y_true, keep)
     tail = "" if end_to_end is None else f"{end_to_end:>12.3f}"
     print(f"{name:<30}{precision:>10.3f}{recall:>9.3f}{f1:>8.3f}"
           f"{fp:>6}{fn:>6}{tail}")
+    if record is not None:
+        RECORDED[record] = {
+            "precision": precision,
+            "recall": recall,
+            "f1": f1,
+            "false_positives": fp,
+            "false_negatives": fn,
+            "end_to_end": end_to_end,
+        }
     return f1
 
 
@@ -243,13 +262,14 @@ def main():
     cosine_threshold = match.best_threshold(y_train, train["cosine"].to_numpy())
     baseline_keep = test["cosine"].to_numpy() >= cosine_threshold
     show(f"cosine >= {cosine_threshold:.3f}", y_test, baseline_keep,
-         end_to_end(baseline_keep))
+         end_to_end(baseline_keep), record=BASELINE)
 
     pair_keep = test_scores >= THRESHOLD
-    show("classifier at 0.5  <- COMPARE", y_test, pair_keep, end_to_end(pair_keep))
-    for name in ("best per right record", "mutual best"):
+    show("classifier at 0.5  <- COMPARE", y_test, pair_keep,
+         end_to_end(pair_keep), record=COMPARABLE)
+    for name in ONE_TO_ONE:
         keep = decide.POLICIES[name](test, test_scores, THRESHOLD)
-        show(f"{name} at 0.5", y_test, keep, end_to_end(keep))
+        show(f"{name} at 0.5", y_test, keep, end_to_end(keep), record=name)
     print("  the marked row is the one comparable to published results; the")
     print("  one-to-one rows exploit the fact that every record here has a partner")
     print("  F1 and end-to-end recall rank these in OPPOSITE orders - the one-to-one")
@@ -273,10 +293,12 @@ def main():
     # weight: I claimed it encoded WHICH RECORDS rarely match rather than
     # anything about the pair. If that were true these two rates would diverge.
     print("\nwas description_known measuring similarity, or record identity?")
+    rates = {}
     for value, label in ((1.0, "description on both sides"), (0.0, "one side blank")):
         subset = test[test["description_known"] == value]
         rate = subset["is_match"].mean() if len(subset) else float("nan")
         print(f"  {label:<28}{len(subset):>6} pairs, {rate:>6.1%} true")
+        rates[label] = {"pairs": int(len(subset)), "true_rate": float(rate)}
     print("  neither - the rates match, so it carried no information about the pair")
     print("  and its coefficient was collinearity. Now diagnostic only.")
 
@@ -286,8 +308,55 @@ def main():
     ):
         print(f"    {name:<24}{weight:+.2f}")
 
-    print("\n16 Abt and 5 Buy records have two true partners, so one-to-one")
-    print("assignment carries a measured recall ceiling of 0.995 on this data.")
+    # These three numbers were "16", "5" and "0.995" typed into the strings
+    # below. abt_buy.py already derives the Buy count and the ceiling, so two
+    # scripts were printing the same fact, one measured and one by hand.
+    left_partners, right_partners = {}, {}
+    for left_id, right_id in truth_pairs:
+        left_partners[left_id] = left_partners.get(left_id, 0) + 1
+        right_partners[right_id] = right_partners.get(right_id, 0) + 1
+    left_several = sum(1 for n in left_partners.values() if n > 1)
+    right_several = sum(1 for n in right_partners.values() if n > 1)
+    ceiling = len(right_partners) / len(truth_pairs)
+    print(f"\n{left_several} Abt and {right_several} Buy records have two true "
+          f"partners, so one-to-one assignment carries a measured recall "
+          f"ceiling of {ceiling:.3f} on this data.")
+    for name in (BASELINE, COMPARABLE) + ONE_TO_ONE:
+        if name not in RECORDED:
+            raise SystemExit(f"{name} not measured - {sorted(RECORDED)}")
+    if any(v["true_rate"] != v["true_rate"] for v in rates.values()):
+        raise SystemExit(f"empty description subset - {rates}")
+    with open(RESULTS, "w", encoding="utf-8", newline="\n") as handle:
+        json.dump(
+            {
+                "blocking_k": K,
+                "blocking_lost": blocking_lost,
+                "blocking_recall": reached / len(truth_pairs),
+                "candidate_pairs": len(table),
+                "candidates_true": reached,
+                "comparable": COMPARABLE,
+                "cosine_threshold": cosine_threshold,
+                "description_known": rates,
+                "left_records": len(left),
+                "left_with_several_partners": left_several,
+                "order": [BASELINE, COMPARABLE] + list(ONE_TO_ONE),
+                "recall_ceiling": ceiling,
+                "results": RECORDED,
+                "right_records": len(right),
+                "right_with_several_partners": right_several,
+                "test_pairs": len(test),
+                "test_true": int(y_test.sum()),
+                "threshold": THRESHOLD,
+                "train_pairs": len(train),
+                "true_pairs": len(truth_pairs),
+                "truth_in_test": len(truth_in_test),
+            },
+            handle,
+            indent=2,
+            sort_keys=True,
+        )
+        handle.write("\n")
+    print(f"wrote {RESULTS} - {len(RECORDED)} rows")
 
 
 if __name__ == "__main__":
