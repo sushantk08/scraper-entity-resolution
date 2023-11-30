@@ -461,8 +461,13 @@ reason the program says out loud gets caught. A comment rots quietly.
 Everything above is measured on a benchmark `perturb.py` generated, so the
 obvious objection is that it only works on data built to be matchable. Abt-Buy
 is a published benchmark with human-labelled pairs: 1,081 Abt products against
-1,092 Buy products, 1,097 true pairs among 1,180,452 possible ones - **0.093%
-positive, against 16% in the generated benchmark.**
+1,092 Buy products, 1,097 true pairs among 1,180,452 possible ones - 0.093%
+positive, against 0.094% in the generated benchmark. The two corpora are almost
+exactly as sparse as each other, so that is not where the difficulty is. **It
+is in blocking: k = 5 finds every true pair in the generated benchmark and
+0.977 of them here, and exact key matching recalls 0.235 there against 0.015
+here.** Abt and Buy share no identifier, so an exact key has nothing to agree
+on but the title itself.
 
 `abt_buy.py` loads it into the same `(left, right, truth)` shape the rest of the
 pipeline already uses, so `block.py` runs on it unchanged. Candidate generation

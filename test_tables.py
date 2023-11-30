@@ -233,6 +233,45 @@ def test_recall_does_not_fall_as_k_grows_in_either_corpus():
                    for k in run["neighbours"]]
         assert recalls == sorted(recalls), (source, recalls)
         assert len(recalls) >= 5, source
+def test_the_abt_buy_corpus_figures_in_the_prose_are_the_recorded_ones():
+    """Four hand-typed numbers introducing the benchmark, each anchored on one
+    following word rather than on the whole sentence, which rewraps.
+    """
+    data = tables.load()["abt_blocking"]
+    for wanted in (f"{data['left_records']:,} Abt",
+                   f"{data['right_records']:,} Buy",
+                   f"{data['true_pairs']:,} true pairs",
+                   f"{data['possible_pairs']:,} possible"):
+        assert wanted in prose(), wanted
+def test_the_sparsity_comparison_measures_both_corpora_the_same_way():
+    """This sentence read "0.093% positive, against 16% in the generated
+    benchmark" for weeks. The 0.093% was true pairs over all possible pairs; the
+    16% was true pairs over the 3,750 that survive blocking. Pre-blocking against
+    post-blocking, published as a 170x difference in sparsity. Measured the same
+    way the two corpora are 0.093% and 0.094% - so both rates are computed here
+    from the same denominator, and the README must print both.
+    """
+    data = tables.load()
+    rates = {}
+    for source in ("abt_blocking", "blocking"):
+        run = data[source]
+        rates[source] = 100 * run["true_pairs"] / run["possible_pairs"]
+    assert abs(rates["abt_blocking"] - rates["blocking"]) < 0.01, rates
+    for rate in rates.values():
+        assert f"{rate:.3f}%" in prose(), rate
+def test_the_blocking_gap_between_the_two_corpora_is_the_recorded_one():
+    """What the generalisation claim rests on now that the sparsity contrast is
+    gone: k = 5 recalls every true pair in the generated benchmark and 0.977
+    here, and an exact key recalls 0.235 there against 0.015 here. Both runs
+    list their exact-key scheme first, so neither internal name is typed twice.
+    """
+    data = tables.load()
+    books, abt = data["blocking"], data["abt_blocking"]
+    assert f"{books['results'][books['shipped']]['recall']:.3f}" == "1.000"
+    assert f"{abt['results']['k = 5']['recall']:.3f} of them here" in prose()
+    pair = (f"{books['results'][books['order'][0]]['recall']:.3f} there against "
+            f"{abt['results'][abt['order'][0]]['recall']:.3f} here")
+    assert pair in prose(), pair
 def test_the_two_scripts_that_fit_the_same_model_agree_in_print():
     """ablate.py and volume_feature.py fit the same model on the same split and
     each publish an F1 for it. They agree to three decimals but NOT bit for bit -
