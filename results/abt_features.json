@@ -1,0 +1,228 @@
+{
+  "baseline": {
+    "mean": 0.6547813950766161,
+    "sd": 0.016851208724466167
+  },
+  "blocking_k": 10,
+  "candidate_pairs": 10920,
+  "decision_changes": {
+    "all + description_known": {
+      "broke": 638,
+      "fixed": 366,
+      "net": -272,
+      "p": 7.611976506851178e-18
+    },
+    "character similarity only": {
+      "broke": 507,
+      "fixed": 439,
+      "net": -68,
+      "p": 0.02932589620629909
+    },
+    "cosine alone": {
+      "broke": 3828,
+      "fixed": 1191,
+      "net": -2637,
+      "p": 1.216726e-318
+    },
+    "text + description": {
+      "broke": 280,
+      "fixed": 168,
+      "net": -112,
+      "p": 1.359032171687447e-07
+    },
+    "text + manufacturer": {
+      "broke": 501,
+      "fixed": 407,
+      "net": -94,
+      "p": 0.0020100911552235123
+    },
+    "text + price": {
+      "broke": 299,
+      "fixed": 309,
+      "net": 10,
+      "p": 0.7151452095665465
+    },
+    "text only": {
+      "broke": 491,
+      "fixed": 421,
+      "net": -70,
+      "p": 0.022271753368213392
+    }
+  },
+  "decisions": 65600,
+  "layers": {
+    "one_to_one": {
+      "all + description_known": {
+        "best": 0.9225908372827804,
+        "losses": 9,
+        "mean": 0.9061168348344705,
+        "p": 1.0,
+        "sd": 0.012082102477193947,
+        "wins": 10,
+        "worst": 0.8784440842787682
+      },
+      "all features": {
+        "best": 0.9293563579277865,
+        "losses": null,
+        "mean": 0.9062650170478493,
+        "p": null,
+        "sd": 0.014572965898192963,
+        "wins": null,
+        "worst": 0.8711256117455138
+      },
+      "character similarity only": {
+        "best": 0.9259842519685039,
+        "losses": 18,
+        "mean": 0.898680902817081,
+        "p": 7.62939453125e-05,
+        "sd": 0.013880129261236746,
+        "wins": 1,
+        "worst": 0.8664495114006515
+      },
+      "cosine alone": {
+        "best": 0.8841761827079935,
+        "losses": 20,
+        "mean": 0.8649442316816602,
+        "p": 1.9073486328125e-06,
+        "sd": 0.01030189871399586,
+        "wins": 0,
+        "worst": 0.8442211055276382
+      },
+      "text + description": {
+        "best": 0.9308176100628931,
+        "losses": 15,
+        "mean": 0.9019021950363767,
+        "p": 0.002349853515625,
+        "sd": 0.015143794752007764,
+        "wins": 2,
+        "worst": 0.8711256117455138
+      },
+      "text + manufacturer": {
+        "best": 0.9274447949526814,
+        "losses": 18,
+        "mean": 0.8983751690564261,
+        "p": 0.0004024505615234375,
+        "sd": 0.014327596245545544,
+        "wins": 2,
+        "worst": 0.8646003262642741
+      },
+      "text + price": {
+        "best": 0.9228346456692913,
+        "losses": 19,
+        "mean": 0.8989853171463544,
+        "p": 4.00543212890625e-05,
+        "sd": 0.014564635522537667,
+        "wins": 1,
+        "worst": 0.8608837970540097
+      },
+      "text only": {
+        "best": 0.9274447949526814,
+        "losses": 18,
+        "mean": 0.898437282452535,
+        "p": 0.0004024505615234375,
+        "sd": 0.01473643754292766,
+        "wins": 2,
+        "worst": 0.8646003262642741
+      }
+    },
+    "pair": {
+      "all + description_known": {
+        "best": 0.7127272727272727,
+        "losses": 18,
+        "mean": 0.6793570958083581,
+        "p": 0.0004024505615234375,
+        "sd": 0.020151954902928017,
+        "wins": 2,
+        "worst": 0.6346153846153845
+      },
+      "all features": {
+        "best": 0.7335811648079306,
+        "losses": null,
+        "mean": 0.6899165942023016,
+        "p": null,
+        "sd": 0.02098735702790483,
+        "wins": null,
+        "worst": 0.6464864864864864
+      },
+      "character similarity only": {
+        "best": 0.7281672816728166,
+        "losses": 13,
+        "mean": 0.6864905354613079,
+        "p": 0.26317596435546875,
+        "sd": 0.020337790117583947,
+        "wins": 7,
+        "worst": 0.6486486486486487
+      },
+      "cosine alone": {
+        "best": 0.6172566371681416,
+        "losses": 20,
+        "mean": 0.5889202830808754,
+        "p": 1.9073486328125e-06,
+        "sd": 0.019421586578225312,
+        "wins": 0,
+        "worst": 0.5377358490566038
+      },
+      "text + description": {
+        "best": 0.7272727272727272,
+        "losses": 19,
+        "mean": 0.684356997212996,
+        "p": 4.00543212890625e-05,
+        "sd": 0.019194149048729958,
+        "wins": 1,
+        "worst": 0.6422413793103449
+      },
+      "text + manufacturer": {
+        "best": 0.7290640394088671,
+        "losses": 16,
+        "mean": 0.6851654100266507,
+        "p": 0.01181793212890625,
+        "sd": 0.020340842805828423,
+        "wins": 4,
+        "worst": 0.643010752688172
+      },
+      "text + price": {
+        "best": 0.7317073170731707,
+        "losses": 11,
+        "mean": 0.6905609231597587,
+        "p": 0.6476058959960938,
+        "sd": 0.020919559860681544,
+        "wins": 8,
+        "worst": 0.6522210184182015
+      },
+      "text only": {
+        "best": 0.7270501835985312,
+        "losses": 15,
+        "mean": 0.6865405625949907,
+        "p": 0.04138946533203125,
+        "sd": 0.019803593828571487,
+        "wins": 5,
+        "worst": 0.6494066882416397
+      }
+    }
+  },
+  "order": [
+    "all features",
+    "cosine alone",
+    "character similarity only",
+    "text only",
+    "text + price",
+    "text + description",
+    "text + manufacturer",
+    "all + description_known"
+  ],
+  "reference": "all features",
+  "seed": 20260827,
+  "sizes": {
+    "all + description_known": 10,
+    "all features": 9,
+    "character similarity only": 3,
+    "cosine alone": 1,
+    "text + description": 5,
+    "text + manufacturer": 6,
+    "text + price": 6,
+    "text only": 4
+  },
+  "splits": 20,
+  "test_fraction": 0.3,
+  "threshold": 0.5
+}

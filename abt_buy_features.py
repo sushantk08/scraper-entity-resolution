@@ -22,6 +22,7 @@ Reports discordant DECISIONS as well as F1, per the rule from step 36: 0.977 ->
 0.983 sounded like a result and was 6 changed decisions split 4-2.
 """
 
+import json
 from math import comb
 
 import numpy as np
@@ -37,6 +38,10 @@ SEED = 20260827
 TEST_FRACTION = 0.3
 THRESHOLD = mab.THRESHOLD
 REFERENCE = "all features"
+RESULTS = "results/abt_features.json"
+# summarise() is called once per layer and writes its rows in here, so the
+# call sites stay two lines long instead of growing an assignment.
+LAYERS = {}
 
 
 def impute(train, test, columns):
@@ -60,7 +65,8 @@ def sign_test(wins, losses):
                if abs(2 * k - total) >= gap) / 2 ** total
 
 
-def summarise(label, results, reference_name):
+def summarise(label, results, reference_name, key=None):
+    recorded = {}
     reference = np.asarray(results[reference_name], dtype=float)
     print(f"\n{label}")
     print(f"  {'feature set':<30}{'mean F1':>9}{'sd':>7}{'worst':>8}{'best':>7}"
@@ -68,6 +74,7 @@ def summarise(label, results, reference_name):
     for name, values in results.items():
         values = np.asarray(values, dtype=float)
         if name == reference_name:
+            wins = losses = None
             wins_column, p_column = f"{'(reference)':>11}", f"{'-':>7}"
         else:
             wins = int((values > reference + 1e-12).sum())
@@ -76,6 +83,18 @@ def summarise(label, results, reference_name):
             p_column = f"{sign_test(wins, losses):>7.3f}"
         print(f"  {name:<30}{values.mean():>9.3f}{values.std(ddof=1):>7.3f}"
               f"{values.min():>8.3f}{values.max():>7.3f}{wins_column}{p_column}")
+        recorded[name] = {
+            "mean": float(values.mean()),
+            "sd": float(values.std(ddof=1)),
+            "worst": float(values.min()),
+            "best": float(values.max()),
+            "wins": wins,
+            "losses": losses,
+            "p": None if wins is None else sign_test(wins, losses),
+        }
+    if key is not None:
+        LAYERS[key] = recorded
+    return recorded
 
 
 def main():
@@ -135,9 +154,9 @@ def main():
     print(f"\ncosine-threshold baseline, no model: mean F1 "
           f"{np.mean(baseline_f1):.3f} (sd {np.std(baseline_f1, ddof=1):.3f})")
     summarise("pair classification at 0.5 — the row comparable to published work:",
-              pair_f1, REFERENCE)
+              pair_f1, REFERENCE, key="pair")
     summarise("under mutual-best one-to-one assignment at 0.5:",
-              one_to_one_f1, REFERENCE)
+              one_to_one_f1, REFERENCE, key="one_to_one")
 
     print(f"\nchanged decisions vs '{REFERENCE}', pooled over "
           f"{decisions:,} test decisions:")
@@ -152,6 +171,50 @@ def main():
     print("\nHow to read this: a subset that wins on 10-12 of 20 splits with p > 0.05")
     print("is indistinguishable from the full feature set, and the honest claim is")
     print("that the extra features buy nothing measurable - not that they hurt.")
+    # Reference first, then GROUPS order. No other curation: the README's
+    # version moved "cosine alone" to the bottom, which is a judgement about
+    # presentation that a recorded run should not be making.
+    order = [REFERENCE] + [n for n in mab.GROUPS if n != REFERENCE]
+    if sorted(order) != sorted(mab.GROUPS):
+        raise SystemExit(f"order lost a group: {order}")
+    for key in ("pair", "one_to_one"):
+        if sorted(LAYERS.get(key, {})) != sorted(mab.GROUPS):
+            raise SystemExit(f"{key} recorded {sorted(LAYERS.get(key, {}))}")
+    with open(RESULTS, "w", encoding="utf-8", newline="\n") as handle:
+        json.dump(
+            {
+                "baseline": {
+                    "mean": float(np.mean(baseline_f1)),
+                    "sd": float(np.std(baseline_f1, ddof=1)),
+                },
+                "blocking_k": mab.K,
+                "candidate_pairs": len(table),
+                "decision_changes": {
+                    name: {
+                        "fixed": fixed[name],
+                        "broke": broke[name],
+                        "net": fixed[name] - broke[name],
+                        "p": sign_test(fixed[name], broke[name]),
+                    }
+                    for name in mab.GROUPS
+                    if name != REFERENCE
+                },
+                "decisions": decisions,
+                "layers": LAYERS,
+                "order": order,
+                "reference": REFERENCE,
+                "seed": SEED,
+                "sizes": {name: len(f) for name, f in mab.GROUPS.items()},
+                "splits": SPLITS,
+                "test_fraction": TEST_FRACTION,
+                "threshold": THRESHOLD,
+            },
+            handle,
+            indent=2,
+            sort_keys=True,
+        )
+        handle.write("\n")
+    print(f"wrote {RESULTS} - {len(LAYERS)} layers, {len(order)} sets")
 
 
 if __name__ == "__main__":
