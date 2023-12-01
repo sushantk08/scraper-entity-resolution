@@ -54,7 +54,7 @@ def test_the_drift_test_can_actually_fail():
 
 
 def test_there_is_a_block_for_every_table_the_readme_marks_as_generated():
-    assert len(tables.blocks(tables.load())) == readme().count(tables.END) == 8
+    assert len(tables.blocks(tables.load())) == readme().count(tables.END) == 9
 
 
 def test_a_rendered_table_is_aligned():
@@ -331,3 +331,61 @@ def test_exactly_two_cells_are_bold_in_the_abt_buy_classifier_table():
     bold = [line for line in rendered.split("\n") if "**" in line]
     assert len(bold) == 2, rendered
     assert sum(line.count("**") for line in bold) == 4, rendered
+
+def test_the_abt_buy_ablation_is_measured_against_the_shipped_feature_set():
+    """The whole table changes meaning with its baseline. It was published
+    against a ten-feature model that had already been dropped, which inverted
+    every win count in it while leaving every mean correct - so no comparison
+    of F1 values could have caught it. This pins the reference to the set the
+    pipeline actually fits, and the diagnostic set to being one larger.
+    """
+    run = tables.load()["abt_features"]
+    assert run["reference"] == "all features"
+    assert run["sizes"][run["reference"]] + 1 == run["sizes"]["all + description_known"]
+    for key in ("pair", "one_to_one"):
+        reference = run["layers"][key][run["reference"]]
+        assert reference["wins"] is None and reference["p"] is None
+def test_the_ablation_win_counts_cannot_exceed_the_number_of_splits():
+    """wins + losses <= splits, the remainder being exact ties. Would catch a
+    resample loop that ran a different number of times than the header claims,
+    which no F1 comparison could see either.
+    """
+    run = tables.load()["abt_features"]
+    checked = 0
+    for layer in run["layers"].values():
+        for name, row in layer.items():
+            if row["wins"] is None:
+                continue
+            assert row["wins"] + row["losses"] <= run["splits"], name
+            assert 0.0 <= row["p"] <= 1.0, name
+            assert row["worst"] <= row["mean"] <= row["best"], name
+            checked += 1
+    assert checked >= 14
+def test_the_abt_buy_ablation_prose_numbers_are_the_recorded_ones():
+    """Every figure in the two paragraphs under that table."""
+    run = tables.load()["abt_features"]
+    pair, one = run["layers"]["pair"], run["layers"]["one_to_one"]
+    splits, text = run["splits"], prose()
+    char_pair, char_one = pair["character similarity only"], one["character similarity only"]
+    assert f"{char_pair['wins']} wins in {splits} paired splits, p {char_pair['p']:.3f}" in text
+    assert f"takes only {char_one['wins']} of {splits}" in text
+    price_pair, price_one = pair["text + price"], one["text + price"]
+    assert f"same story, {price_pair['wins']} of {splits} against {price_one['wins']} of {splits}" in text
+    extra, extra_one = pair["all + description_known"], one["all + description_known"]
+    assert (f"adding it back wins {extra['wins']} of {splits} at the pair layer "
+            f"(p {extra['p']:.3f}) and {extra_one['wins']} of {splits} at the "
+            f"one-to-one layer (p {extra_one['p']:.3f})") in text
+    reference = run["reference"]
+    gap_pair = pair[reference]["mean"] - char_pair["mean"]
+    gap_one = one[reference]["mean"] - char_one["mean"]
+    assert f"gap is {gap_pair:.3f} F1 at the pair layer and {gap_one:.3f} at the" in text
+    spread = [row["sd"] for layer in run["layers"].values() for row in layer.values()]
+    assert f"sd {min(spread):.3f} to {max(spread):.3f}" in text
+def test_the_two_abt_buy_model_runs_share_a_candidate_table():
+    """abt_buy_features.py builds its table through match_abt_buy, so if these
+    disagree the ablation is describing a different corpus than the classifier
+    table three sections above it.
+    """
+    data = tables.load()
+    for key in ("blocking_k", "candidate_pairs"):
+        assert data["abt_features"][key] == data["abt_classifier"][key], key

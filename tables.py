@@ -30,6 +30,20 @@ BLOCKING = os.path.join("results", "blocking.json")
 VOLUME = os.path.join("results", "volume.json")
 ABT_BLOCKING = os.path.join("results", "abt_blocking.json")
 ABT_CLASSIFIER = os.path.join("results", "abt_classifier.json")
+ABT_FEATURES = os.path.join("results", "abt_features.json")
+# match_abt_buy.GROUPS, which abt_buy_features.py imports wholesale. Listed
+# here rather than imported because importing that module needs the benchmark
+# data, and benchmark/ is gitignored so CI has none.
+ABT_GROUPS = (
+    "all features",
+    "cosine alone",
+    "character similarity only",
+    "text only",
+    "text + price",
+    "text + description",
+    "text + manufacturer",
+    "all + description_known",
+)
 # Row names as match_abt_buy.py records them. The baseline's README label
 # carries the tuned threshold, so it is built from the recorded number rather
 # than listed here - typing "0.497" into this file would reintroduce exactly
@@ -128,6 +142,7 @@ def load():
         "volume": read_run(VOLUME, CONFIGURATIONS, "CONFIGURATIONS"),
         "abt_blocking": read_run(ABT_BLOCKING, ABT_SCHEMES, "ABT_SCHEMES"),
         "abt_classifier": read_run(ABT_CLASSIFIER, ABT_ROWS, "ABT_ROWS"),
+        "abt_features": read_layers(ABT_FEATURES, ABT_GROUPS),
     }
 
 
@@ -245,6 +260,51 @@ def volume(data):
     )
 
 
+def read_layers(path, names):
+    """abt_features.json is the one recording with two result layers instead
+    of a single "results" map, because every feature set is measured twice -
+    at a fixed threshold and under one-to-one assignment. read_run checks one
+    map and cannot see this shape.
+    """
+    with open(path, encoding="utf-8") as handle:
+        data = json.load(handle)
+    for key in ("pair", "one_to_one"):
+        missing = [name for name in names if name not in data["layers"][key]]
+        if missing:
+            raise SystemExit(f"{path} {key} layer is missing {missing}")
+    if sorted(data["order"]) != sorted(names):
+        raise SystemExit(f"{path} order is {data['order']}, wanted {list(names)}")
+    return data
+def abt_features(data):
+    """The Abt-Buy feature ablation over 20 paired resamples. The reference
+    row's label carries its own feature count, taken from the recording, so it
+    cannot drift when a feature is added or dropped - which is exactly what
+    went wrong here. The published version of this table was measured against
+    a ten-feature baseline the repo had stopped shipping, so every win count
+    in it answered the opposite question, while every mean in it was correct.
+    Rows follow the recorded order, reference first; the hand-typed version
+    moved "cosine alone" to the bottom, which is a presentation judgement a
+    recorded run should not be making.
+    """
+    reference = data["reference"]
+    splits = data["splits"]
+    rows = []
+    for name in data["order"]:
+        pair = data["layers"]["pair"][name]
+        one = data["layers"]["one_to_one"][name]
+        rows.append([
+            f"all {data['sizes'][name]} features" if name == reference else name,
+            f"{pair['mean']:.3f}",
+            "-" if name == reference else f"{pair['wins']}/{splits}",
+            f"{one['mean']:.3f}",
+            "-" if name == reference else f"{one['wins']}/{splits}",
+        ])
+    marked = sum(1 for row in rows if row[2] == "-")
+    if marked != 1:
+        raise SystemExit(f"{marked} rows claim to be the reference, wanted 1")
+    return render(
+        ["feature set", "pair F1", "beats all", "one-to-one F1", "beats all"], rows
+    )
 def abt_classifier(data):
     """The Abt-Buy classifier table. Two cells are bold and, unlike the
     blocking table, they ARE column maxima - best F1 and best end-to-end
@@ -368,6 +428,10 @@ BLOCKS = [
      # The volume table also starts "| configuration"; this is the only one
      # reporting end-to-end recall.
      lambda line: line.startswith("| configuration") and "end-to-end" in line),
+    ("abt-features", "abt_features", abt_features,
+     # The books ablation table also starts "| feature set"; this is the only
+     # one with a pair F1 column.
+     lambda line: line.startswith("| feature set") and "pair F1" in line),
 ]
 
 END = "<!-- end -->"
