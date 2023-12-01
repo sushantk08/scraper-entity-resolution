@@ -389,3 +389,19 @@ def test_the_two_abt_buy_model_runs_share_a_candidate_table():
     data = tables.load()
     for key in ("blocking_k", "candidate_pairs"):
         assert data["abt_features"][key] == data["abt_classifier"][key], key
+
+def test_the_readme_explains_the_subset_whose_mean_beats_the_full_model():
+    """text + price has a higher mean F1 than the full feature set and still
+    loses most splits. That is the clearest single argument in the repo for
+    counting wins rather than comparing means, and it is also the line in that
+    table a reader is most likely to report as a mistake, so both halves of it
+    are pinned: the means in that order, and the losing win count.
+    """
+    run = tables.load()["abt_features"]
+    pair = run["layers"]["pair"]
+    subset, reference = pair["text + price"], pair[run["reference"]]
+    assert subset["mean"] > reference["mean"]
+    assert subset["wins"] * 2 < run["splits"]
+    text = prose()
+    assert f"higher than the full model's, {subset['mean']:.3f}" in text
+    assert f"against {reference['mean']:.3f}, and it still wins under half" in text

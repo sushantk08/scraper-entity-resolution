@@ -605,13 +605,15 @@ the table below except the fall to cosine alone.
 one-to-one assignment.** Character similarity alone is indistinguishable from the
 full model at 0.5 - 7 wins in 20 paired splits, p 0.263 - and takes only 1 of 20
 once each record picks its best partner. Text plus price is the same story, 8 of
-20 against 1 of 20. The gap is 0.003 F1 at the pair layer and 0.008 at the
-one-to-one layer, both smaller than the spread between splits, which is why win
-counts rather than means decide it. The likely reason is that assignment only
-needs the ranking inside a record's ten candidates to be right, and price and
-manufacturer break ties between near-identical titles, while a fixed cut needs
-calibration, which those features move in both directions at once. That reading
-is an interpretation, not something measured here.
+20 against 1 of 20; its mean is even a shade higher than the full model's, 0.691
+against 0.690, and it still wins under half the splits, which is the whole reason
+this table counts wins instead of comparing means. The gap is 0.003 F1 at the pair
+layer and 0.008 at the one-to-one layer, both smaller than the spread between
+splits. The likely reason is that assignment only needs the ranking inside a
+record's ten candidates to be right, and price and manufacturer break ties between
+near-identical titles, while a fixed cut needs calibration, which those features
+move in both directions at once. That reading is an interpretation, not something
+measured here.
 
 Which makes the layer you ship the only one whose verdict counts - the same lesson
 as the tuner trap, in a new costume. `description_known` is the one row that is
