@@ -20,6 +20,7 @@ The veto touches only the 134 candidate pairs whose stated volumes disagree, and
 0 of those have ever been a true match.
 """
 
+import json
 import re
 from difflib import SequenceMatcher
 
@@ -35,6 +36,12 @@ import block
 K = 5
 SEED = 20260826
 TEST_FRACTION = 0.3
+RESULTS = "results/match.json"
+# Stable row keys. README.md's labels are built from these plus the two
+# recorded thresholds, so a retuned threshold cannot leave a stale label
+# sitting in the table the way "threshold tuned" did.
+BASELINE, PLAIN, SHIPPED, TUNED = "baseline", "classifier", "shipped", "tuned"
+RECORDED = {}
 
 VOLUME_MARKER = re.compile(r"(?:vol\.?|volume|book|part|no\.?|#)\s*(\d+)", re.I)
 
@@ -202,6 +209,11 @@ def main():
     precision, recall, f1 = evaluate(y_test, test["cosine"].to_numpy(), baseline_threshold)
     print(f"\nbaseline (cosine >= {baseline_threshold:.3f})")
     print(f"  precision {precision:.3f}  recall {recall:.3f}  f1 {f1:.3f}")
+    RECORDED[BASELINE] = {
+        "precision": float(precision),
+        "recall": float(recall),
+        "f1": float(f1),
+    }
 
     scaler = StandardScaler().fit(train[FEATURES])
     model = LogisticRegression(max_iter=2000, class_weight="balanced")
@@ -212,12 +224,17 @@ def main():
     tuned = best_threshold(y_train, apply_veto(train, train_raw))
 
     print("\nlogistic regression")
-    for label, scores, threshold in (
-        ("model alone, at 0.5", test_raw, 0.5),
-        ("+ volume veto, at 0.5", test_shipped, 0.5),
-        (f"+ veto, at {tuned:.3f} (tuned on train)", test_shipped, tuned),
+    for key, label, scores, threshold in (
+        (PLAIN, "model alone, at 0.5", test_raw, 0.5),
+        (SHIPPED, "+ volume veto, at 0.5", test_shipped, 0.5),
+        (TUNED, f"+ veto, at {tuned:.3f} (tuned on train)", test_shipped, tuned),
     ):
         precision, recall, f1 = evaluate(y_test, scores, threshold)
+        RECORDED[key] = {
+            "precision": float(precision),
+            "recall": float(recall),
+            "f1": float(f1),
+        }
         print(f"  {label:<34} precision {precision:.3f}  recall {recall:.3f}  f1 {f1:.3f}")
     print("  (the tuned row is kept visible because it scores WORSE than 0.5 —")
     print("   a threshold picked on one fold does not transfer to another)")
@@ -240,6 +257,47 @@ def main():
     print(f"\nend-to-end recall on the test fold: {len(found)}/{len(truth_in_test)} "
           f"= {len(found) / len(truth_in_test):.3f}")
     print("  (blocking losses included — this is the honest headline number)")
+    order = [BASELINE, PLAIN, SHIPPED, TUNED]
+    unrecorded = [name for name in order if name not in RECORDED]
+    if unrecorded:
+        raise SystemExit(f"ERROR: nothing recorded for {unrecorded}")
+    with open(RESULTS, "w", encoding="utf-8") as handle:
+        json.dump(
+            {
+                "k": K,
+                "seed": SEED,
+                "test_fraction": TEST_FRACTION,
+                "candidate_pairs": int(len(table)),
+                "candidates_true": positives,
+                "true_pairs": len(truth_pairs),
+                "blocking_recall": float(blocking_recall),
+                "blocking_lost": len(truth_pairs) - positives,
+                "volume_conflicts": int(conflicts.sum()),
+                "volume_conflicts_true": int(table.loc[conflicts, "is_match"].sum()),
+                "train_pairs": int(len(train)),
+                "test_pairs": int(len(test)),
+                "test_true": int(y_test.sum()),
+                "baseline_threshold": float(baseline_threshold),
+                "tuned_threshold": float(tuned),
+                "threshold": 0.5,
+                "shipped": SHIPPED,
+                "order": order,
+                "results": RECORDED,
+                "end_to_end": {
+                    "found": len(found),
+                    "truth_in_test": len(truth_in_test),
+                    "recall": len(found) / len(truth_in_test),
+                },
+                "coefficients": {
+                    name: float(weight)
+                    for name, weight in zip(FEATURES, model.coef_[0])
+                },
+            },
+            handle,
+            indent=2,
+            sort_keys=True,
+        )
+    print(f"\nwrote {RESULTS} - {len(order)} rows")
 
 
 if __name__ == "__main__":

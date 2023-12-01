@@ -30,6 +30,8 @@ BLOCKING = os.path.join("results", "blocking.json")
 VOLUME = os.path.join("results", "volume.json")
 ABT_BLOCKING = os.path.join("results", "abt_blocking.json")
 ABT_CLASSIFIER = os.path.join("results", "abt_classifier.json")
+MATCH_RESULTS = os.path.join("results", "match.json")
+MATCH_ROWS = ("baseline", "classifier", "shipped", "tuned")
 ABT_FEATURES = os.path.join("results", "abt_features.json")
 # match_abt_buy.GROUPS, which abt_buy_features.py imports wholesale. Listed
 # here rather than imported because importing that module needs the benchmark
@@ -143,6 +145,7 @@ def load():
         "abt_blocking": read_run(ABT_BLOCKING, ABT_SCHEMES, "ABT_SCHEMES"),
         "abt_classifier": read_run(ABT_CLASSIFIER, ABT_ROWS, "ABT_ROWS"),
         "abt_features": read_layers(ABT_FEATURES, ABT_GROUPS),
+        "match": read_run(MATCH_RESULTS, MATCH_ROWS, "MATCH_ROWS"),
     }
 
 
@@ -305,6 +308,37 @@ def abt_features(data):
     return render(
         ["feature set", "pair F1", "beats all", "one-to-one F1", "beats all"], rows
     )
+def classifier(data):
+    """The books classifier comparison. Both thresholds go into the labels
+    rather than being typed, because the hand-typed row read "threshold tuned"
+    without saying tuned to what - 0.816 appeared only in a paragraph twelve
+    lines below the table. Bold marks the shipped configuration, not the
+    maximum, and this refuses to render if any other row scores a higher F1,
+    which would mean the repo ships something it has already measured as
+    worse. The shipped row is allowed to tie.
+    """
+    threshold = data["threshold"]
+    label = {
+        "baseline": f"baseline: similarity >= {data['baseline_threshold']:.3f}",
+        "classifier": f"classifier at {threshold}",
+        "shipped": f"classifier + volume veto at {threshold}",
+        "tuned": f"classifier + veto at {data['tuned_threshold']:.3f} (tuned)",
+    }
+    shipped = data["shipped"]
+    top = max(row["f1"] for row in data["results"].values())
+    if data["results"][shipped]["f1"] < top - 1e-12:
+        raise SystemExit(f"{shipped} is not the best F1 measured: {top:.4f}")
+    rows = []
+    for name in data["order"]:
+        row = data["results"][name]
+        f1 = f"{row['f1']:.3f}"
+        rows.append([
+            label[name],
+            f"{row['precision']:.3f}",
+            f"{row['recall']:.3f}",
+            f"**{f1}**" if name == shipped else f1,
+        ])
+    return render(["model", "precision", "recall", "F1"], rows)
 def abt_classifier(data):
     """The Abt-Buy classifier table. Two cells are bold and, unlike the
     blocking table, they ARE column maxima - best F1 and best end-to-end
@@ -432,6 +466,8 @@ BLOCKS = [
      # The books ablation table also starts "| feature set"; this is the only
      # one with a pair F1 column.
      lambda line: line.startswith("| feature set") and "pair F1" in line),
+    ("classifier", "match", classifier,
+     lambda line: line.startswith("| model") and "precision" in line),
 ]
 
 END = "<!-- end -->"

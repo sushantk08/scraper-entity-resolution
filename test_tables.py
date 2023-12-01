@@ -54,7 +54,7 @@ def test_the_drift_test_can_actually_fail():
 
 
 def test_there_is_a_block_for_every_table_the_readme_marks_as_generated():
-    assert len(tables.blocks(tables.load())) == readme().count(tables.END) == 9
+    assert len(tables.blocks(tables.load())) == readme().count(tables.END) == 10
 
 
 def test_a_rendered_table_is_aligned():
@@ -405,3 +405,50 @@ def test_the_readme_explains_the_subset_whose_mean_beats_the_full_model():
     text = prose()
     assert f"higher than the full model's, {subset['mean']:.3f}" in text
     assert f"against {reference['mean']:.3f}, and it still wins under half" in text
+
+def test_the_shipped_books_configuration_is_the_best_one_measured():
+    """If some other row ever scores a higher F1 than the configuration the
+    pipeline runs, the table is quietly advertising a better option that the
+    code declines to take. tables.classifier refuses to render in that case;
+    this asserts the same thing against the recording. The second half pins
+    the direction of the trade the prose describes: the tuned row does win on
+    precision, so "scored worse" is only true of F1 and recall.
+    """
+    run = tables.load()["match"]
+    assert run["shipped"] in run["order"]
+    top = max(row["f1"] for row in run["results"].values())
+    assert run["results"][run["shipped"]]["f1"] >= top - 1e-12
+    assert run["results"]["tuned"]["precision"] > run["results"][run["shipped"]]["precision"]
+def test_the_readme_end_to_end_recall_is_the_recorded_one():
+    """The headline number for the whole books pipeline."""
+    end = tables.load()["match"]["end_to_end"]
+    assert f"**{end['found']} of {end['truth_in_test']} = {end['recall']:.3f}**" in prose()
+def test_the_readme_tuned_threshold_trade_is_the_recorded_one():
+    run = tables.load()["match"]
+    shipped, tuned = run["results"][run["shipped"]], run["results"]["tuned"]
+    text = prose()
+    assert f"({run['tuned_threshold']:.3f}, chosen on the training fold)" in text
+    assert (f"buys {tuned['precision'] - shipped['precision']:.3f} precision for "
+            f"{shipped['recall'] - tuned['recall']:.3f} recall") in text
+    assert f"falls from {shipped['f1']:.3f} to {tuned['f1']:.3f}" in text
+def test_the_books_recordings_agree_on_the_split_and_the_candidate_table():
+    """Every books recording declaring one of these keys has to agree with
+    match.py, since they all build the same candidate table from the same seed
+    and split it the same way. This is the third leg of the cross-check:
+    ablate.py and volume_feature.py already agree in print, and match.py is
+    the script whose numbers the README quotes as headline results. Compared
+    by key presence rather than by a hardcoded list of sources, so a new
+    recording joins the check by declaring the key.
+    """
+    runs = tables.load()
+    run = runs["match"]
+    shared = ("candidate_pairs", "train_pairs", "test_pairs", "test_true", "seed", "k")
+    checked = 0
+    for name, other in runs.items():
+        if name == "match" or name.startswith("abt") or not isinstance(other, dict):
+            continue
+        for key in shared:
+            if key in other and key in run:
+                assert other[key] == run[key], f"{name}.{key}"
+                checked += 1
+    assert checked >= 6
