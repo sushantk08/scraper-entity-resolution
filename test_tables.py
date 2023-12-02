@@ -485,3 +485,46 @@ def test_the_blocking_recording_agrees_with_match_on_the_shipped_scheme():
     assert str(run["k"]) in blocking["shipped"]
     assert row["pairs"] == run["candidate_pairs"]
     assert abs(row["recall"] - run["blocking_recall"]) < 1e-9
+
+def test_the_sweep_reproduces_match_on_the_seed_they_share():
+    """sweep.py's first seed is match.SEED, and "threshold only" at a flat 0.5
+    with the veto applied is the configuration match.py ships. Two scripts, two
+    separate fits, one shared seed: the rows have to agree bit for bit. The
+    other two policies have to disagree, or the sweep is not measuring three
+    different things and its bands mean nothing.
+    """
+    data = tables.load()
+    sweep, run = data["sweep"], data["match"]
+    shipped = run["results"][run["shipped"]]
+    index = sweep["seeds"].index(run["seed"])
+    row = sweep["results"]["threshold only"][index]
+    for key in ("precision", "recall", "f1"):
+        assert f"{row[key]:.3f}" == f"{shipped[key]:.3f}", key
+        assert abs(row[key] - shipped[key]) < 1e-9, key
+    assert sweep["threshold"] == run["threshold"]
+    assert sweep["candidate_pairs"] == run["candidate_pairs"]
+    differ = [name for name in sweep["results"] if name != "threshold only"
+              and abs(sweep["results"][name][index]["f1"] - shipped["f1"]) > 1e-9]
+    assert len(differ) == len(sweep["results"]) - 1, differ
+    assert f"all {run['candidate_pairs']} pairs" in prose()
+def test_the_readme_sweep_band_for_the_shipped_row_is_the_recorded_one():
+    """The classifier table's third row is one split, and the README says so by
+    quoting the band the 20-split sweep found for the same policy. All three
+    figures are derived here, so a re-run that moves the median cannot leave
+    the sentence behind. The median is computed by hand rather than imported so
+    the even-length case is visible: 20 splits average the middle two.
+    """
+    data = tables.load()
+    sweep = data["sweep"]
+    scores = sorted(row["f1"] for row in sweep["results"]["threshold only"])
+    shipped = data["match"]["results"][data["match"]["shipped"]]["f1"]
+    assert len(scores) == len(sweep["seeds"])
+    half = len(scores) // 2
+    if len(scores) % 2:
+        median = scores[half]
+    else:
+        median = (scores[half - 1] + scores[half]) / 2
+    assert scores[-1] >= shipped - 1e-9
+    wanted = (f"{scores[-1]:.3f} is the **top** of its range: median "
+              f"{median:.3f}, range {scores[0]:.3f} to {scores[-1]:.3f}")
+    assert wanted in prose(), wanted
