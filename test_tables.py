@@ -452,3 +452,36 @@ def test_the_books_recordings_agree_on_the_split_and_the_candidate_table():
                 assert other[key] == run[key], f"{name}.{key}"
                 checked += 1
     assert checked >= 6
+
+def test_the_ablation_reference_is_the_unvetoed_classifier_from_match():
+    """ablate.py refits the model for every subset and never applies the
+    volume veto, so its reference row is match.py's "classifier at 0.5" and
+    not the shipped "+ volume veto" row. The two agree bit for bit, which is
+    only possible if both scripts fit the same model on the same split - the
+    third leg of the shipped-configuration cross-check. Compared formatted
+    first, because exact float equality across scripts is not something to
+    assert blind, and then exactly, because here it does hold.
+    """
+    data = tables.load()
+    ablation = data["ablation"]
+    reference = ablation["results"][ablation["reference"]]
+    unvetoed = data["match"]["results"]["classifier"]
+    shipped = data["match"]["results"][data["match"]["shipped"]]
+    for key in ("precision", "recall", "f1"):
+        assert f"{reference[key]:.3f}" == f"{unvetoed[key]:.3f}", key
+        assert abs(reference[key] - unvetoed[key]) < 1e-9, key
+    assert reference["f1"] < shipped["f1"]
+    wanted = f"reads {reference['f1']:.3f} rather than the {shipped['f1']:.3f} bolded above"
+    assert wanted in prose(), wanted
+def test_the_blocking_recording_agrees_with_match_on_the_shipped_scheme():
+    """block.py sweeps k and match.py runs one of them. The row block.py marks
+    as shipped has to be the one match.py built its candidate table from, or
+    the blocking recall the README quotes belongs to a different k than the
+    pipeline uses.
+    """
+    data = tables.load()
+    blocking, run = data["blocking"], data["match"]
+    row = blocking["results"][blocking["shipped"]]
+    assert str(run["k"]) in blocking["shipped"]
+    assert row["pairs"] == run["candidate_pairs"]
+    assert abs(row["recall"] - run["blocking_recall"]) < 1e-9
